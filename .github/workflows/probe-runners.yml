@@ -34,11 +34,6 @@ on:
         required: false
         type: boolean
         default: false
-  # Weekly, because runner images are rebuilt continuously and a component
-  # disappearing is exactly the failure this catches. Wednesday keeps it clear
-  # of the nightly build window.
-  schedule:
-    - cron: "41 6 * * 3"
 
 permissions:
   contents: read
@@ -201,7 +196,7 @@ jobs:
   # nothing else -- two or three minutes, no sync, no build.
   census-windows-build-class:
     name: census-windows-build-class
-    # Gated: this is the most expensive runner class we use, and the weekly
+    # Gated: this is the most expensive runner class we use, and the ordinary
     # probe exists to be cheap. Paired with the checkout measurement because
     # neither number decides anything on its own.
     if: ${{ inputs.measure_windows_disk }}

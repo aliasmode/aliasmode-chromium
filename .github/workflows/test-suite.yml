@@ -7,10 +7,6 @@ name: test suite
 # is how a Chromium update is tested before its release exists. The live tier
 # does not run here: hosted runners exit from datacenter addresses.
 on:
-  push:
-    branches:
-      - main
-  pull_request:
   workflow_dispatch:
     inputs:
       nightly_run:

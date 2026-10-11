@@ -1,40 +1,34 @@
-<p align="center">
-  <img src="docs/images/banner.png" alt="Apostate: be any machine. Windows, macOS, Linux." width="100%">
-</p>
+# AliasMode Chromium
 
-<h3 align="center">
-  <a href="https://apostate.dev">Website</a>
-  &nbsp;·&nbsp;
-  <a href="https://docs.apostate.dev">Documentation</a>
-  &nbsp;·&nbsp;
-  <a href="https://docs.apostate.dev/quickstart">Quickstart</a>
-  &nbsp;·&nbsp;
-  <a href="https://docs.apostate.dev/agents/overview">AI agents</a>
-  &nbsp;·&nbsp;
-  <a href="https://docs.apostate.dev/testing/results">Test results</a>
-</h3>
+AliasMode's open-source Chromium engine, built on top of
+[Apostate](https://github.com/heretic-tech/apostate).
 
-<p align="center">
-  <a href="https://github.com/heretic-tech/apostate/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/heretic-tech/apostate?style=flat-square&label=release&color=2536C8"></a>
-  <a href="https://pypi.org/project/apostate/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/apostate?style=flat-square&label=pypi&color=2536C8"></a>
-  <a href="https://www.npmjs.com/package/@heretic-tech/apostate"><img alt="npm version" src="https://img.shields.io/npm/v/%40heretic-tech%2Fapostate?style=flat-square&label=npm&color=2536C8"></a>
-  <a href="build/CHROMIUM_VERSION"><img alt="Chromium version" src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fheretic-tech%2Fapostate%2Fmain%2Fbuild%2FMANIFEST.lock&query=%24.chromium_version&label=chromium&style=flat-square&color=2536C8"></a>
-  <br>
-  <a href="https://github.com/heretic-tech/apostate/actions/workflows/test-suite.yml"><img alt="Test suite" src="https://img.shields.io/github/actions/workflow/status/heretic-tech/apostate/test-suite.yml?branch=main&style=flat-square&label=tests"></a>
-  <a href="https://github.com/heretic-tech/apostate/actions/workflows/check.yml"><img alt="Checks" src="https://img.shields.io/github/actions/workflow/status/heretic-tech/apostate/check.yml?branch=main&style=flat-square&label=checks"></a>
-  <a href="https://docs.apostate.dev/concepts/personas"><img alt="Platforms" src="https://img.shields.io/badge/personas-Windows%20%7C%20macOS%20%7C%20Linux-2536C8?style=flat-square"></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/heretic-tech/apostate?style=flat-square&color=2536C8"></a>
-</p>
+[Source](https://github.com/aliasmode/aliasmode-chromium) ·
+[Upstream documentation](https://docs.apostate.dev) · [License](LICENSE)
 
-Apostate is a Chromium build that presents a machine you choose: a Windows,
-macOS or Linux persona with a GPU, screen, fonts, voices, locale and timezone
-to match. The values are changed in Chromium's C++ where they are produced.
-No JavaScript is injected and no DevTools override is set, so workers, iframes
-and request headers read the same machine as the page.
+## Development status
 
-Python and Node packages download the browser and launch it through Patchright
-or Playwright (Node also drives Puppeteer). An MCP server gives AI agents the
-same browser. Free and open source under GPL-3.0, with no account or paid tier.
+This repository contains the initial source setup, not a released AliasMode
+Chromium browser. It starts from upstream `v0.5.1`, with Chromium
+`155.0.8059.31`. Exact source pins are in
+[`settings/aliasmode-provenance.json`](settings/aliasmode-provenance.json).
+
+The downstream changes add native display labels and fix the missing Windows
+version manifest in package assembly. Browser executable names, macOS bundle
+paths, fingerprint APIs, and web-facing Chrome identity remain unchanged.
+Native compilation, full binary branding, and AliasMode app integration are
+not done yet. Existing app profiles are unchanged.
+
+GitHub Actions is disabled during setup. Build, browser-test, and release
+workflows are manual-only; no paid build or publication runs automatically.
+`build/MANIFEST.lock` remains the inherited upstream build record, not evidence
+of an AliasMode build.
+
+## Upstream packages
+
+The commands and examples below use upstream packages and binaries, not
+AliasMode releases. Package names, imports, archive names, and download URLs
+remain unchanged until an owned browser build is available.
 
 ## Install
 
@@ -85,7 +79,7 @@ The MCP server gives Claude Code, Codex, Cursor and other MCP clients browser
 tools on a headless Apostate browser. See
 [AI agents](https://docs.apostate.dev/agents/overview).
 
-## Proof
+## Upstream test results
 
 A Windows persona on an Apple silicon Mac, Chromium 152.0.7977.83, on
 2026-09-27. The IP address and location fields are hidden.
@@ -111,7 +105,7 @@ the dated result files in [`tests/results/`](tests/results/).
 [Known gaps](https://docs.apostate.dev/known-gaps) lists what a page can still
 tell.
 
-## Platforms
+## Upstream binaries
 
 | Host | Archive |
 | --- | --- |
@@ -138,6 +132,23 @@ host, macOS personas on a Mac. See
 
 [Contributing](https://docs.apostate.dev/contributing/overview) covers building
 the browser, writing a patch and cutting a release.
+
+## Upstream updates
+
+Keep `origin` on this repository and add
+`https://github.com/heretic-tech/apostate.git` as the `upstream` remote.
+The `upstream-main` branch preserves the upstream main revision recorded at
+initialization; it is not merged into the tested release baseline.
+
+1. Fetch upstream branches and tags with `git fetch upstream --tags`.
+2. Create an update branch from `origin/main` and review the chosen upstream release.
+3. Merge that release, retaining the downstream branding and Windows packaging fix.
+4. Update provenance, run the source checks, then build and test the native browser.
+5. Review the result before updating `main` or publishing an owned release.
+
+Upstream merges and releases are deliberate, not automatic. The source checks
+in [`.github/workflows/check.yml`](.github/workflows/check.yml) do not replace
+native browser testing.
 
 ## Licence
 

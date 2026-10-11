@@ -1,9 +1,6 @@
 name: release
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       release_tag:
@@ -38,24 +35,19 @@ jobs:
       - name: Check out tagged revision
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ inputs.release_tag || github.ref }}
+          ref: ${{ inputs.release_tag }}
           fetch-depth: 0
           persist-credentials: false
       - name: Require a version tag
         id: tag
         env:
-          EVENT_NAME: ${{ github.event_name }}
           REQUESTED_TAG: ${{ inputs.release_tag }}
           CONFIRMATION: ${{ inputs.confirm }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = "push" ]; then
-            tag="$GITHUB_REF_NAME"
-          else
-            [ "$CONFIRMATION" = true ] || { echo "workflow_dispatch requires confirm=true" >&2; exit 1; }
-            tag="$REQUESTED_TAG"
-          fi
+          [ "$CONFIRMATION" = true ] || { echo "workflow_dispatch requires confirm=true" >&2; exit 1; }
+          tag="$REQUESTED_TAG"
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
             echo "release must use a version tag such as v1.2.3" >&2
             exit 1
@@ -68,9 +60,7 @@ jobs:
           # public key in its keyring.
           git fetch --force --tags origin
           git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            git checkout --detach "refs/tags/$tag"
-          fi
+          git checkout --detach "refs/tags/$tag"
           revision="$(git rev-parse HEAD)"
           [ "$revision" = "$(git rev-parse "refs/tags/$tag^{commit}")" ] || {
             echo "checked out revision is not the tag target" >&2
@@ -250,5 +240,5 @@ jobs:
           set -euo pipefail
           version="$(python3 -c 'import json;print(json.load(open(".github/release/artifact-policy.json"))["manifest_contract"]["chromium_version"])')"
           gh release create "$RELEASE_TAG" release-inputs/* --verify-tag --draft \
-            --title "Apostate $RELEASE_TAG" \
-            --notes "Apostate artifacts for Chromium $version. Verify provenance with: gh attestation verify <artifact> --repo $REPOSITORY"
+            --title "AliasMode Chromium $RELEASE_TAG" \
+            --notes "AliasMode Chromium artifacts for Chromium $version. Verify provenance with: gh attestation verify <artifact> --repo $REPOSITORY"

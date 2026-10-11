@@ -61,15 +61,16 @@ headless_lib_data.pak
 MEIPreload'
     ;;
   windows-x64)
-    required='chrome.exe
+    required="chrome.exe
 chrome.dll
 chrome_elf.dll
+$CHROMIUM_VERSION.manifest
 icudtl.dat
 resources.pak
 chrome_100_percent.pak
 chrome_200_percent.pak
 v8_context_snapshot.bin
-locales'
+locales"
     optional='libEGL.dll
 libGLESv2.dll
 vk_swiftshader.dll
