@@ -155,3 +155,4 @@
 0159-display-a-forced-scale-factor-sets-the-pixel-ratio.patch
 0160-window-a-label-switch-prefixes-the-native-window-title.patch
 0161-tls-ask-for-server-padding-as-chrome-does.patch
+0162-locale-reduce-accept-language-as-chrome-does.patch
