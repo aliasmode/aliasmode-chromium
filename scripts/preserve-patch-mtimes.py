@@ -58,7 +58,10 @@ def restore(root, saved):
             continue
         if current and all(current[key] == old[key] for key in ("sha256", "mode")):
             state = path.stat()
-            os.utime(path, ns=(state.st_atime_ns, old["mtime_ns"]), follow_symlinks=False)
+            # fingerprint() admits regular files only, so following a link is
+            # never asked for. Windows' os.utime cannot take follow_symlinks.
+            os.utime(path, ns=(state.st_atime_ns, old["mtime_ns"]),
+                     follow_symlinks=os.utime not in os.supports_follow_symlinks)
             count += 1
     return count
 
