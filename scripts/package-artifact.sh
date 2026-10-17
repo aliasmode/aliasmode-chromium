@@ -76,6 +76,7 @@ libGLESv2.dll
 vk_swiftshader.dll
 vulkan-1.dll
 d3dcompiler_47.dll
+dxcompiler.dll
 mojo_core.dll'
     ;;
   *) die "unsupported target: $TARGET" ;;
