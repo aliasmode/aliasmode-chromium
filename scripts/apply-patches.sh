@@ -122,6 +122,9 @@ while IFS= read -r root; do
   git -C "$root" checkout -- .
 done < <(repo_roots)
 while IFS= read -r path; do
+  # Windows Python ends each printed line with CRLF; a kept CR names a file
+  # that does not exist, so the series' own files survived the reset.
+  path="${path%$'\r'}"
   [ -n "$path" ] || continue
   rm -f "$SRC/$path"
   # Remove the directory only when the series created it and nothing else is
