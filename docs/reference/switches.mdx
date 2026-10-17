@@ -267,11 +267,11 @@ The browser also uses this switch itself. It passes the composed profile to ever
 
 ### `--aliasmode-window-label`
 
-Puts the text in front of the title the operating system shows for every browser window and every popup a page opens, so windows of different profiles can be told apart in the taskbar. The window of a page titled `Inbox` with `--aliasmode-window-label="Work · #3 — "` is titled `Work · #3 — Inbox - Chromium` on Windows.
+Puts the text in front of the title the operating system shows for every browser window and every popup a page opens, so windows of different profiles can be told apart in the taskbar. The window of a page titled `Inbox` with `--aliasmode-window-label="Work · #3 —"` is titled `Work · #3 — Inbox - Chromium` on Windows.
 
 - **Default.** No label.
 - Only the native window title changes. `document.title`, the tab strip and the saved session stay as they were, so a page cannot read the label.
-- The text is used as given, with no separator added. A window named with "Name window" shows the label in front of its name.
+- The browser puts one space between the label and the title, and drops whitespace at the end of the label, which Windows removes from every switch value anyway. A window named with "Name window" shows the label in front of its name.
 - App and DevTools windows keep their own titles.
 
 ## Precedence

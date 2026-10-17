@@ -1,10 +1,11 @@
 Subject: [PATCH] window: a label switch prefixes the native window title
 
---aliasmode-window-label=<text> puts <text> in front of the title the OS
-shows for every browser window and popup, so windows of different
-profiles can be told apart in the taskbar and window switcher. The
-launcher used to do this with a page script that rewrote document.title,
-so every page could read the profile's label and saw its title changed.
+--aliasmode-window-label=<text> puts <text> and one space in front of the
+title the OS shows for every browser window and popup, so windows of
+different profiles can be told apart in the taskbar and window switcher.
+The launcher used to do this with a page script that rewrote
+document.title, so every page could read the profile's label and saw its
+title changed.
 
 The label is added where the window title is computed, in front of the
 page title or of a "Name window" title. It is not stored as the window's
@@ -12,8 +13,12 @@ user title: that would replace the page title instead of prefixing it and
 would be saved into the session. Pages, the tab strip and the session see
 nothing. App and DevTools windows keep their own titles.
 
+The browser adds the separating space itself. On Windows, CommandLine
+trims the whitespace around every argument, so a label passed as
+"Work — " arrived as "Work —" and the title read "Work —Inbox".
+
 diff --git a/chrome/browser/ui/window_metadata/window_metadata_controller.cc b/chrome/browser/ui/window_metadata/window_metadata_controller.cc
-index 2e7435b..82c11da 100644
+index 2e7435b..ad922b8 100644
 --- a/chrome/browser/ui/window_metadata/window_metadata_controller.cc
 +++ b/chrome/browser/ui/window_metadata/window_metadata_controller.cc
 @@ -6,6 +6,9 @@
@@ -26,28 +31,41 @@ index 2e7435b..82c11da 100644
  #include "base/strings/utf_string_conversions.h"
  #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
  #include "chrome/browser/sessions/session_service.h"
-@@ -36,6 +39,20 @@ namespace {
+@@ -36,6 +39,33 @@ namespace {
  
  using gfx::GetStringWidth;
  
-+// AliasMode: --aliasmode-window-label=<text> puts <text> in front of the
-+// native title of every browser window, so windows of different profiles can
-+// be told apart in the taskbar and the window switcher. Only the title the OS
-+// shows changes. document.title, the tab strip, the session and the "Name
-+// window" user title stay as they were, so no page can read the label.
++// AliasMode: --aliasmode-window-label=<text> puts <text> and one space in
++// front of the native title of every browser window, so windows of different
++// profiles can be told apart in the taskbar and the window switcher. Only the
++// title the OS shows changes. document.title, the tab strip, the session and
++// the "Name window" user title stay as they were, so no page can read the
++// label.
 +constexpr char kAliasModeWindowLabel[] = "aliasmode-window-label";
 +
++std::u16string ReadWindowLabel() {
++  const std::u16string value =
++      base::UTF8ToUTF16(base::CommandLine::ForCurrentProcess()
++                            ->GetSwitchValueUTF8(kAliasModeWindowLabel));
++  // CommandLine trims the whitespace around every argument on Windows, so a
++  // separating space at the end of the value never arrives. The space is
++  // added here instead, on every platform alike.
++  std::u16string label(base::TrimWhitespace(value, base::TRIM_TRAILING));
++  if (!label.empty()) {
++    label += u' ';
++  }
++  return label;
++}
++
 +const std::u16string& WindowLabel() {
-+  static const base::NoDestructor<std::u16string> label(base::UTF8ToUTF16(
-+      base::CommandLine::ForCurrentProcess()->GetSwitchValueUTF8(
-+          kAliasModeWindowLabel)));
++  static const base::NoDestructor<std::u16string> label(ReadWindowLabel());
 +  return *label;
 +}
 +
  }  // namespace
  
  DEFINE_USER_DATA(WindowMetadataController);
-@@ -77,8 +94,16 @@ gfx::Image WindowMetadataController::GetCurrentPageIcon() const {
+@@ -77,8 +107,16 @@ gfx::Image WindowMetadataController::GetCurrentPageIcon() const {
  
  std::u16string WindowMetadataController::GetWindowTitleForCurrentTab(
      bool include_app_name) const {
@@ -65,7 +83,7 @@ index 2e7435b..82c11da 100644
    }
  
    // For document picture-in-picture windows, we use the title from the opener
-@@ -89,8 +114,8 @@ std::u16string WindowMetadataController::GetWindowTitleForCurrentTab(
+@@ -89,8 +127,8 @@ std::u16string WindowMetadataController::GetWindowTitleForCurrentTab(
            ? PictureInPictureWindowManager::GetInstance()->GetWebContents()
            : browser_->tab_strip_model()->GetActiveWebContents();
  
