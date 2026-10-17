@@ -27,6 +27,7 @@ When the browser refuses a value, it prints `apostate: <reason>` on stderr and e
 | [`--fingerprint-webrtc-udp`](#fingerprint-webrtc-udp) | `direct`, `block` | follows the proxy |
 | [`--fingerprint-noise`](#fingerprint-noise) | none | off |
 | [`--apostate-profile`](#apostate-profile) | base64-encoded profile JSON | none |
+| [`--aliasmode-window-label`](#aliasmode-window-label) | text | none |
 
 The Python and Node packages refuse a switch that starts with `--fingerprint` and is not in this table, and a switch within two edits of one in it, such as `--fingeprint-platform`. The browser itself ignores an unknown switch, as Chromium does.
 
@@ -194,8 +195,9 @@ The seed never draws the locale or the timezone. The Python and Node packages fi
 
 ### `--fingerprint-locale`
 
-- **One tag**, such as `de-DE`, sets the browser's UI locale. `Intl`, date and number formats and `navigator.language` follow it. `navigator.languages` and the `Accept-Language` header carry Chrome's own default list for that locale, such as `de-DE,de,en-US,en` for `de-DE`.
-- **A comma list**, such as `de-DE,de`, sets `navigator.languages` and `Accept-Language` exactly. Its first tag is the UI locale.
+- **One tag**, such as `de-DE`, sets the browser's UI locale. `Intl`, date and number formats and `navigator.language` follow it. The language list is Chrome's own default list for that locale, such as `de-DE,de,en-US,en` for `de-DE`.
+- **A comma list**, such as `de-DE,de`, sets the language list exactly. Its first tag is the UI locale.
+- As in Chrome, `navigator.languages` names only the first language of the list, and a page's `Accept-Language` header sends that language and its base language, such as `de-DE,de;q=0.9`. A site that answers with `Content-Language` and `Variants` headers can get another language from the list, as from Chrome.
 - **Default.** `en-US`, never the host's language. Host mode keeps the host's.
 - The browser writes the UI locale into `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG` before it starts any other process. `--lang` has no effect on a persona.
 - The speech voices follow the first tag. A Windows persona lists its `en-GB` voice set for `en-GB` and its `en-US` set for every other tag.
@@ -261,6 +263,17 @@ python3 scripts/validate-release-contract.py --kind profile profile.json
 
 The browser also uses this switch itself. It passes the composed profile to every child process in it, and the packages use it to carry proxy credentials. A value that carries only credentials does not stop composition.
 
+## Window label
+
+### `--aliasmode-window-label`
+
+Puts the text in front of the title the operating system shows for every browser window and every popup a page opens, so windows of different profiles can be told apart in the taskbar. The window of a page titled `Inbox` with `--aliasmode-window-label="Work · #3 — "` is titled `Work · #3 — Inbox - Chromium` on Windows.
+
+- **Default.** No label.
+- Only the native window title changes. `document.title`, the tab strip and the saved session stay as they were, so a page cannot read the label.
+- The text is used as given, with no separator added. A window named with "Name window" shows the label in front of its name.
+- App and DevTools windows keep their own titles.
+
 ## Precedence
 
 Strongest first:
@@ -282,6 +295,7 @@ Strongest first:
 | `--proxy-server=URL` | Accepts a credential in the URL, such as `socks5://user:pass@proxy.example:1080`. See [the proxy credential](#the-proxy-credential). |
 | `--headless=new` | Runs headless. The User-Agent keeps the `Chrome` token instead of `HeadlessChrome`. The packages pass it when `headless` is on. |
 | `--window-size=W,H` | Sets the window size. A per-field screen smaller than it is refused. |
+| `--force-device-scale-factor=N` | Draws the window at scale `N`. `devicePixelRatio`, the scale the page is drawn at and the `Sec-CH-DPR` header are all `N`, in place of the persona's pixel ratio. Pass the host display's own scale, such as `1.5` at 150%, so the page is drawn sharp. See [A forced scale factor sets the pixel ratio](/known-gaps#a-forced-scale-factor-sets-the-pixel-ratio). |
 | `--lang=TAG` | No effect on a persona's locale. Use `--fingerprint-locale`. |
 | `--use-angle=BACKEND` | Changes how the host renders and tells the composer which host backend to assume. The GPU a page is told about stays the persona's. |
 | `--disable-gpu` | The composer treats the host as having no GPU. A Linux host with no usable render node is treated the same way. |

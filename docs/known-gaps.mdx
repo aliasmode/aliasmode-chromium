@@ -103,6 +103,12 @@ The persona's device list is a floor, and the host's own devices are kept. On a 
 
 **What to do.** Run personas on a host with no capture devices, such as a server, or disable the devices on the host.
 
+### A forced scale factor sets the pixel ratio
+
+With `--force-device-scale-factor=N`, `devicePixelRatio`, the scale the page is drawn at and the `Sec-CH-DPR` header all read `N`, whatever pixel ratio the persona claims. The window is drawn at that scale, and a page drawn at another one is stretched by the operating system and looks blurred. Without the switch the persona's pixel ratio applies, and on a host whose display is scaled the page is drawn at the persona's ratio.
+
+**What to do.** On a scaled Windows display, pass the display's own scale, such as `--force-device-scale-factor=1.5` at 150%. The composed machine is the same with or without the switch: `--fingerprint-explain` prints the same `catalogue` line and the same values.
+
 ### A Windows host parses file paths as Windows
 
 Chrome on Windows turns `c:\foo` and `\\server\share` into `file:` URLs, and a page can read that. A Windows persona on Linux or macOS does the same. A macOS or Linux persona on a Windows host does not undo it.
