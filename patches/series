@@ -153,3 +153,4 @@
 0157-webgpu-the-software-adapter-passes-155s-fallback-gate.patch
 0158-branding-aliasmode-product-and-company-labels.patch
 0159-display-a-forced-scale-factor-sets-the-pixel-ratio.patch
+0160-window-a-label-switch-prefixes-the-native-window-title.patch
