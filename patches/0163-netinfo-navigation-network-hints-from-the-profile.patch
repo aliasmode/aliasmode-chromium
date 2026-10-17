@@ -1,0 +1,140 @@
+Subject: [PATCH] netinfo: navigation network hints from the profile
+
+The RTT, Downlink and ECT client hints of a navigation are written in the
+browser from the host's network estimate. 0088 serves the profile's
+network to navigator.connection and to subresource requests from the
+renderer, so the navigation request disagreed with both: browserleaks
+read RTT 0 and Downlink 10 in the headers where JavaScript read rtt 100
+and downlink 4.55 (the profile's 4.15 with Chromium's per-host noise). The browser now works the profile's values out the same way
+NetworkStateNotifier does, with the same bands and floors, and Chromium's
+own per-host noise and rounding still apply. A profile without a network
+section leaves the host's estimate in place.
+
+diff --git a/content/browser/client_hints/client_hints.cc b/content/browser/client_hints/client_hints.cc
+index b1778eb..46cda46 100644
+--- a/content/browser/client_hints/client_hints.cc
++++ b/content/browser/client_hints/client_hints.cc
+@@ -8,6 +8,7 @@
+ #include <optional>
+ #include <string>
+ 
++#include "base/apostate/profile.h"
+ #include "base/check_is_test.h"
+ #include "base/command_line.h"
+ #include "base/dcheck_is_on.h"
+@@ -209,6 +210,85 @@ GetWebHoldbackEffectiveConnectionType() {
+   return effective_connection_type;
+ }
+ 
++// Apostate: the network the profile claims, worked out the way
++// NetworkStateNotifier::ApplyProfileNetworkQuality works it out for
++// navigator.connection (0088). The RTT, Downlink and ECT headers of a
++// navigation are written here, in the browser, so without this they carried
++// the host's estimate while JavaScript and subresource requests carried the
++// profile's. A value the profile does not decide stays empty, which leaves the
++// host's value in place, as in the renderer.
++struct ProfileNetworkQuality {
++  std::optional<net::EffectiveConnectionType> type;
++  std::optional<base::TimeDelta> http_rtt;
++  std::optional<int32_t> downlink_kbps;
++};
++
++ProfileNetworkQuality GetProfileNetworkQuality() {
++  ProfileNetworkQuality quality;
++  const base::apostate::Profile* profile = base::apostate::Profile::Get();
++  if (!profile) {
++    return quality;
++  }
++  if (const std::optional<std::string>& name =
++          profile->network_effective_type()) {
++    if (*name == "slow-2g") {
++      quality.type = net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G;
++    } else if (*name == "2g") {
++      quality.type = net::EFFECTIVE_CONNECTION_TYPE_2G;
++    } else if (*name == "3g") {
++      quality.type = net::EFFECTIVE_CONNECTION_TYPE_3G;
++    } else if (*name == "4g") {
++      quality.type = net::EFFECTIVE_CONNECTION_TYPE_4G;
++    }
++  }
++  if (std::optional<int> rtt_ms = profile->network_http_rtt_ms()) {
++    quality.http_rtt = base::Milliseconds(*rtt_ms);
++  }
++
++  // A named type holds the round trip inside that type's band, and a round
++  // trip on its own selects the type Chromium derives from it.
++  const auto& thresholds = net::kHttpRttEffectiveConnectionTypeThresholds;
++  if (quality.type && quality.http_rtt) {
++    const base::TimeDelta upper =
++        *quality.type == net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G
++            ? base::Seconds(3)
++            : thresholds[static_cast<size_t>(*quality.type) - 1] -
++                  base::Milliseconds(1);
++    quality.http_rtt = std::clamp(
++        *quality.http_rtt, thresholds[static_cast<size_t>(*quality.type)],
++        upper);
++  } else if (quality.type) {
++    quality.http_rtt =
++        net::NetworkQualityEstimatorParams::GetDefaultTypicalHttpRtt(
++            *quality.type);
++  } else if (quality.http_rtt) {
++    quality.type = net::EFFECTIVE_CONNECTION_TYPE_4G;
++    for (net::EffectiveConnectionType type :
++         {net::EFFECTIVE_CONNECTION_TYPE_SLOW_2G,
++          net::EFFECTIVE_CONNECTION_TYPE_2G,
++          net::EFFECTIVE_CONNECTION_TYPE_3G}) {
++      if (*quality.http_rtt >= thresholds[static_cast<size_t>(type)]) {
++        quality.type = type;
++        break;
++      }
++    }
++  }
++
++  // Throughput never goes under the claimed type's typical value.
++  const std::optional<double> downlink_mbps = profile->network_downlink_mbps();
++  if (downlink_mbps) {
++    quality.downlink_kbps = base::ClampRound<int32_t>(*downlink_mbps * 1000);
++  }
++  if (quality.type) {
++    const int32_t typical =
++        net::NetworkQualityEstimatorParams::GetDefaultTypicalDownlinkKbps(
++            *quality.type);
++    quality.downlink_kbps = std::max(quality.downlink_kbps.value_or(typical),
++                                     typical);
++  }
++  return quality;
++}
++
+ void SetHeaderToDouble(net::HttpRequestHeaders* headers,
+                        WebClientHintsType client_hint_type,
+                        double value) {
+@@ -394,6 +474,9 @@ void AddRttHeader(net::HttpRequestHeaders* headers,
+   if (web_holdback_ect.has_value()) {
+     http_rtt = net::NetworkQualityEstimatorParams::GetDefaultTypicalHttpRtt(
+         web_holdback_ect.value());
++  } else if (std::optional<base::TimeDelta> profile_rtt =
++                 GetProfileNetworkQuality().http_rtt) {
++    http_rtt = *profile_rtt;
+   } else if (network_quality_tracker) {
+     http_rtt = network_quality_tracker->GetHttpRTT();
+   } else {
+@@ -417,6 +500,9 @@ void AddDownlinkHeader(net::HttpRequestHeaders* headers,
+     downlink_throughput_kbps =
+         net::NetworkQualityEstimatorParams::GetDefaultTypicalDownlinkKbps(
+             web_holdback_ect.value());
++  } else if (std::optional<int32_t> profile_kbps =
++                 GetProfileNetworkQuality().downlink_kbps) {
++    downlink_throughput_kbps = *profile_kbps;
+   } else if (network_quality_tracker) {
+     downlink_throughput_kbps =
+         network_quality_tracker->GetDownstreamThroughputKbps();
+@@ -441,6 +527,9 @@ void AddEctHeader(net::HttpRequestHeaders* headers,
+   int effective_connection_type;
+   if (web_holdback_ect.has_value()) {
+     effective_connection_type = web_holdback_ect.value();
++  } else if (std::optional<net::EffectiveConnectionType> profile_type =
++                 GetProfileNetworkQuality().type) {
++    effective_connection_type = *profile_type;
+   } else if (network_quality_tracker) {
+     effective_connection_type =
+         static_cast<int>(network_quality_tracker->GetEffectiveConnectionType());
