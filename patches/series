@@ -152,3 +152,4 @@
 0156-fonts-a-windows-persona-names-variable-font-instances.patch
 0157-webgpu-the-software-adapter-passes-155s-fallback-gate.patch
 0158-branding-aliasmode-product-and-company-labels.patch
+0159-display-a-forced-scale-factor-sets-the-pixel-ratio.patch
