@@ -1,0 +1,35 @@
+Subject: [PATCH] tls: ask for server handshake padding as Chrome does
+
+Google Chrome turns on AddTLSServerHandshakePadding through a field trial,
+and its ClientHello asks for 4000 bytes. This build runs no field trials, so its
+ClientHello lacked the server_padding extension (0x12e0) and the JA4
+fingerprint read t13d1517h2_8daaf6152771_cb7bf5808d99, which is Chrome 150's,
+where Chrome 155 reads t13d1518h2_8daaf6152771_4980c97edce0. The feature
+is now on by default with the 4000-byte request, in persona and host mode
+alike, because the TLS stack is the same in both.
+
+diff --git a/net/base/features.cc b/net/base/features.cc
+index 91baaef..a2c4e25 100644
+--- a/net/base/features.cc
++++ b/net/base/features.cc
+@@ -992,13 +992,18 @@ BASE_FEATURE_PARAM(std::string,
+                    &kEnablePrivateVerificationTokens,
+                    "");
+ 
+-BASE_FEATURE(kAddTLSServerHandshakePadding, base::FEATURE_DISABLED_BY_DEFAULT);
++// Apostate: on, asking for 4000 bytes, as Google Chrome turns it on through a
++// field trial. This build runs no field trials, so with Chromium's default the
++// ClientHello lacked the server_padding extension (0x12e0) that stable Chrome
++// sends since 152, and its JA4 read t13d1517h2 where Chrome's reads t13d1518h2.
++// 4000 is the length Chrome's own ClientHello asks for.
++BASE_FEATURE(kAddTLSServerHandshakePadding, base::FEATURE_ENABLED_BY_DEFAULT);
+ 
+ BASE_FEATURE_PARAM(int,
+                    kAddTLSServerHandshakePaddingBytes,
+                    &kAddTLSServerHandshakePadding,
+                    "AddTLSServerHandshakePaddingBytes",
+-                   0);
++                   4000);
+ 
+ bool IsDnsPlatformSupported() {
+ #if BUILDFLAG(IS_ANDROID)
