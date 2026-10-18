@@ -4,7 +4,7 @@ Name the native UI and company for AliasMode Chromium. Keep Chromium's
 executable, bundle and framework names so existing build and launch paths
 still work. Web-facing Chrome identity and fingerprint behavior are unchanged.
 
-Based on Chromium 155.0.8059.31 (aca5b6aded42f34dbea27ea1e57fe9b01ca1766b).
+Based on Chromium 155.0.8059.85 (0e66b94549a8bd85f03fbdf189b752d6e7b63c32).
 
 diff --git a/chrome/app/theme/chromium/BRANDING b/chrome/app/theme/chromium/BRANDING
 --- a/chrome/app/theme/chromium/BRANDING
