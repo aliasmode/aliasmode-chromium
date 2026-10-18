@@ -1,0 +1,270 @@
+Subject: [PATCH] webrtc: gather the given address when UDP cannot be used
+
+Behind a proxy that carries no datagrams, or under the
+disable_non_proxied_udp policy, WebRTC creates no UDP socket and a page
+gets no UDP candidate. --fingerprint-webrtc-ip only rewrote candidates
+that exist, so it did nothing there: a page saw a public address over
+HTTP and none in WebRTC, which Pixelscan reports as a WebRTC leak.
+
+With the switch set and UDP unusable, the allocation sequence of the
+switch's address family gathers over a socket that never sends. It
+answers a binding request to a configured STUN server with the given
+address, as that server would, and drops every other datagram. WebRTC
+then builds the candidates of a host with that public address itself:
+foundations, priorities and ports as usual, an mDNS name for a host
+candidate, and only the candidates the IP handling policy allows. No
+packet, and no DNS query for a STUN server, leaves the machine, and no
+local address appears. Connectivity checks still fail, as they do
+without UDP, and TURN over TCP and TLS works as before. Without the
+switch nothing changes.
+
+The candidate text rewrite of patch 0073 now keeps an mDNS name and an
+empty related address, as stock Chrome shows them.
+
+diff --git a/third_party/webrtc/api/candidate.cc b/third_party/webrtc/api/candidate.cc
+index 2398b96f8a..9b0aad86fb 100644
+--- a/third_party/webrtc/api/candidate.cc
++++ b/third_party/webrtc/api/candidate.cc
+@@ -90,7 +90,10 @@ std::string BuildCandidate(const Candidate& candidate, bool include_ufrag) {
+           : candidate.address().ipaddr().ToString();
+   bool address_overridden = false;
+ #if defined(WEBRTC_CHROMIUM_BUILD)
+-  if (candidate.is_stun() || candidate.is_local()) {
++  // An mDNS name hides the address already, and stock Chrome shows one there,
++  // so it is kept.
++  if ((candidate.is_stun() || candidate.is_local()) &&
++      !candidate.address().ipaddr().IsNil()) {
+     const base::CommandLine* command_line =
+         base::CommandLine::ForCurrentProcess();
+     if (command_line->HasSwitch("fingerprint-webrtc-ip")) {
+@@ -113,8 +116,9 @@ std::string BuildCandidate(const Candidate& candidate, bool include_ufrag) {
+   // Related address
+   if (!candidate.related_address().IsNil()) {
+     os << kAttributeCandidateRaddr << " "
+-       << (address_overridden ? address
+-                              : candidate.related_address().ipaddr().ToString())
++       << (address_overridden && !candidate.related_address().IsAnyIP()
++               ? address
++               : candidate.related_address().ipaddr().ToString())
+        << " "
+        << kAttributeCandidateRport << " "
+        << candidate.related_address().PortAsString() << " ";
+diff --git a/third_party/webrtc/p2p/BUILD.gn b/third_party/webrtc/p2p/BUILD.gn
+index eafa80180a..97b19ea1d5 100644
+--- a/third_party/webrtc/p2p/BUILD.gn
++++ b/third_party/webrtc/p2p/BUILD.gn
+@@ -164,6 +164,13 @@ rtc_library("basic_port_allocator") {
+     "//third_party/abseil-cpp/absl/memory",
+     "//third_party/abseil-cpp/absl/strings:string_view",
+   ]
++  if (build_with_chromium) {
++    deps += [
++      "../api/transport:stun_types",
++      "../rtc_base:byte_buffer",
++      "//base",
++    ]
++  }
+ }
+ 
+ rtc_source_set("candidate_pair_interface") {
+diff --git a/third_party/webrtc/p2p/client/basic_port_allocator.cc b/third_party/webrtc/p2p/client/basic_port_allocator.cc
+index 3b36570b20..87ed52e9de 100644
+--- a/third_party/webrtc/p2p/client/basic_port_allocator.cc
++++ b/third_party/webrtc/p2p/client/basic_port_allocator.cc
+@@ -54,6 +54,12 @@
+ #include "rtc_base/socket_address.h"
+ #include "rtc_base/strings/string_builder.h"
+ #include "rtc_base/trace_event.h"
++#if defined(WEBRTC_CHROMIUM_BUILD)
++#include "api/transport/stun.h"
++#include "base/command_line.h"
++#include "base/rand_util.h"
++#include "rtc_base/byte_buffer.h"
++#endif
+ 
+ namespace webrtc {
+ namespace {
+@@ -171,6 +177,114 @@ std::string NetworksToString(const std::vector<const Network*>& networks) {
+   return ost.Release();
+ }
+ 
++#if defined(WEBRTC_CHROMIUM_BUILD)
++// The address --fingerprint-webrtc-ip names, if it is an IP literal.
++std::optional<IPAddress> SyntheticReflexiveAddress() {
++  const base::CommandLine* command_line =
++      base::CommandLine::ForCurrentProcess();
++  IPAddress address;
++  if (!command_line->HasSwitch("fingerprint-webrtc-ip") ||
++      !IPFromString(command_line->GetSwitchValueASCII("fingerprint-webrtc-ip"),
++                    &address) ||
++      IPIsAny(address)) {
++    return std::nullopt;
++  }
++  return address;
++}
++
++// A UDP socket that never sends. It is bound from the start, answers a
++// binding request to one of `stun_servers` with `reflexive` as the mapped
++// address, as a STUN server would answer a host whose public address that is,
++// and drops every other datagram. A UDPPort over it gathers the host and
++// server-reflexive candidates such a host gathers, and no packet leaves this
++// machine.
++class SyntheticUdpSocket : public AsyncPacketSocket {
++ public:
++  SyntheticUdpSocket(TaskQueueBase* network_thread,
++                     const SocketAddress& local_address,
++                     const SocketAddress& reflexive,
++                     const ServerAddresses& stun_servers)
++      : network_thread_(network_thread),
++        local_address_(local_address),
++        reflexive_(reflexive),
++        stun_servers_(stun_servers) {}
++
++  SocketAddress GetLocalAddress() const override { return local_address_; }
++  SocketAddress GetRemoteAddress() const override { return SocketAddress(); }
++  int Send(const void* /* data */,
++           size_t size,
++           const AsyncSocketPacketOptions& /* options */) override {
++    return static_cast<int>(size);
++  }
++  int SendTo(const void* data,
++             size_t size,
++             const SocketAddress& address,
++             const AsyncSocketPacketOptions& /* options */) override {
++    const uint8_t* bytes = static_cast<const uint8_t*>(data);
++    if (size >= kStunHeaderSize && stun_servers_.count(address) &&
++        ((bytes[0] << 8) | bytes[1]) == STUN_BINDING_REQUEST &&
++        ((uint32_t{bytes[4]} << 24) | (uint32_t{bytes[5]} << 16) |
++         (uint32_t{bytes[6]} << 8) | uint32_t{bytes[7]}) == kStunMagicCookie) {
++      std::string transaction_id(reinterpret_cast<const char*>(bytes) + 8,
++                                 kStunTransactionIdLength);
++      network_thread_->PostDelayedTask(
++          SafeTask(safety_.flag(),
++                   [this, address, transaction_id] {
++                     Answer(address, transaction_id);
++                   }),
++          TimeDelta::Millis(base::RandIntInclusive(20, 60)));
++    }
++    return static_cast<int>(size);
++  }
++  int Close() override {
++    closed_ = true;
++    return 0;
++  }
++  State GetState() const override {
++    return closed_ ? STATE_CLOSED : STATE_BOUND;
++  }
++  int GetOption(Socket::Option /* option */, int* /* value */) override {
++    return -1;
++  }
++  int SetOption(Socket::Option /* option */, int /* value */) override {
++    return 0;
++  }
++  int GetError() const override { return 0; }
++  void SetError(int /* error */) override {}
++
++ private:
++  void Answer(const SocketAddress& server, const std::string& transaction_id) {
++    if (closed_) {
++      return;
++    }
++    StunMessage response(STUN_BINDING_RESPONSE, transaction_id);
++    response.AddAttribute(std::make_unique<StunXorAddressAttribute>(
++        STUN_ATTR_XOR_MAPPED_ADDRESS, reflexive_));
++    ByteBufferWriter buffer;
++    if (response.Write(&buffer)) {
++      NotifyPacketReceived(ReceivedIpPacket(buffer.DataView(), server));
++    }
++  }
++
++  TaskQueueBase* const network_thread_;
++  const SocketAddress local_address_;
++  const SocketAddress reflexive_;
++  const ServerAddresses stun_servers_;
++  bool closed_ = false;
++  ScopedTaskSafety safety_;
++};
++
++// A local port in the allocator's range, or in the ephemeral range Windows
++// and macOS bind in when it sets none.
++int SyntheticLocalPort(int min_port, int max_port) {
++  if (min_port <= 0 || max_port < min_port) {
++    min_port = 49152;
++    max_port = 65535;
++  }
++  return base::RandIntInclusive(min_port, max_port);
++}
++#endif  // defined(WEBRTC_CHROMIUM_BUILD)
++
+ }  // namespace
+ 
+ const uint32_t DISABLE_ALL_PHASES =
+@@ -1438,7 +1552,54 @@ void AllocationSequence::Process(int epoch) {
+ }
+ 
+ void AllocationSequence::CreateUDPPorts() {
+-  if (IsFlagSet(PORTALLOCATOR_DISABLE_UDP)) {
++  // Set when UDP cannot be used and --fingerprint-webrtc-ip names the public
++  // address. The port then gathers over a SyntheticUdpSocket.
++  std::optional<ServerAddresses> synthetic_stun_servers;
++#if defined(WEBRTC_CHROMIUM_BUILD)
++  // UDP cannot be used when the proxy carries no datagrams or the
++  // disable_non_proxied_udp policy is on; the allocator's own flags say so.
++  // A page then sees no UDP candidate, which no real host on that address
++  // shows. Only in the given address's family, only on the shared socket,
++  // and only once per network, as for a real socket.
++  std::optional<IPAddress> reflexive = SyntheticReflexiveAddress();
++  if (reflexive && (session_->flags() & PORTALLOCATOR_DISABLE_UDP) &&
++      IsFlagSet(PORTALLOCATOR_ENABLE_SHARED_SOCKET) &&
++      reflexive->family() == network_->GetBestIP().family() &&
++      !absl::c_any_of(session_->ports_,
++                      [this](const BasicPortAllocatorSession::PortData& p) {
++                        return !p.pruned() && p.port()->Network() == network_ &&
++                               p.port()->GetProtocol() == PROTO_UDP &&
++                               p.port()->Type() == IceCandidateType::kHost &&
++                               !p.error();
++                      })) {
++    // A STUN server named by host name keeps the name, which the candidate's
++    // url carries, and gets an address that is never contacted, so no name is
++    // looked up. The given address is public, so no local network access
++    // permission is asked for it.
++    ServerAddresses servers;
++    if (config_) {
++      for (SocketAddress server : config_->StunServers()) {
++        if (server.IsUnresolvedIP()) {
++          server.SetResolvedIP(*reflexive);
++        }
++        servers.insert(server);
++      }
++    }
++    BasicPortAllocator& allocator = *session_->allocator();
++    udp_socket_ = std::make_unique<SyntheticUdpSocket>(
++        session_->network_thread(),
++        SocketAddress(network_->GetBestIP(),
++                      SyntheticLocalPort(allocator.min_port(),
++                                         allocator.max_port())),
++        SocketAddress(*reflexive, base::RandIntInclusive(1024, 65535)), servers);
++    udp_socket_->RegisterReceivedPacketCallback(
++        [&](AsyncPacketSocket* socket, const ReceivedIpPacket& packet) {
++          OnReadPacket(socket, packet);
++        });
++    synthetic_stun_servers = std::move(servers);
++  }
++#endif
++  if (IsFlagSet(PORTALLOCATOR_DISABLE_UDP) && !synthetic_stun_servers) {
+     RTC_LOG(LS_VERBOSE) << "AllocationSequence: UDP ports disabled, skipping.";
+     return;
+   }
+@@ -1487,7 +1648,11 @@ void AllocationSequence::CreateUDPPorts() {
+       port->SubscribePortDestroyed(
+           this, [this](PortInterface* port) { OnPortDestroyed(port); });
+       // If STUN is not disabled, setting stun server address to port.
+-      if (!IsFlagSet(PORTALLOCATOR_DISABLE_STUN)) {
++      if (synthetic_stun_servers) {
++        if (!synthetic_stun_servers->empty()) {
++          port->set_server_addresses(*synthetic_stun_servers);
++        }
++      } else if (!IsFlagSet(PORTALLOCATOR_DISABLE_STUN)) {
+         if (config_ && !config_->StunServers().empty()) {
+           RTC_LOG(LS_INFO)
+               << "AllocationSequence: UDPPort will be handling the "
