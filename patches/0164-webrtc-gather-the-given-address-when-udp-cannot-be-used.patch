@@ -68,7 +68,7 @@ index eafa80180a..97b19ea1d5 100644
  
  rtc_source_set("candidate_pair_interface") {
 diff --git a/third_party/webrtc/p2p/client/basic_port_allocator.cc b/third_party/webrtc/p2p/client/basic_port_allocator.cc
-index 3b36570b20..87ed52e9de 100644
+index 3b36570b20..a282a1b373 100644
 --- a/third_party/webrtc/p2p/client/basic_port_allocator.cc
 +++ b/third_party/webrtc/p2p/client/basic_port_allocator.cc
 @@ -54,6 +54,12 @@
@@ -199,7 +199,7 @@ index 3b36570b20..87ed52e9de 100644
  }  // namespace
  
  const uint32_t DISABLE_ALL_PHASES =
-@@ -1438,7 +1552,54 @@ void AllocationSequence::Process(int epoch) {
+@@ -1438,7 +1552,57 @@ void AllocationSequence::Process(int epoch) {
  }
  
  void AllocationSequence::CreateUDPPorts() {
@@ -208,14 +208,17 @@ index 3b36570b20..87ed52e9de 100644
 +  // address. The port then gathers over a SyntheticUdpSocket.
 +  std::optional<ServerAddresses> synthetic_stun_servers;
 +#if defined(WEBRTC_CHROMIUM_BUILD)
-+  // UDP cannot be used when the proxy carries no datagrams or the
-+  // disable_non_proxied_udp policy is on; the allocator's own flags say so.
-+  // A page then sees no UDP candidate, which no real host on that address
-+  // shows. Only in the given address's family, only on the shared socket,
-+  // and only once per network, as for a real socket.
++  // UDP cannot be used under the disable_non_proxied_udp policy, which the
++  // allocator's flags carry, or when the socket factory refused Init() the
++  // shared socket because the proxy carries no datagrams in this family. The
++  // flags alone do not say the latter: a peer connection built before the
++  // renderer learned the proxy's egress has UDP enabled in them. A page then
++  // sees no UDP candidate, which no real host on that address shows. Only in
++  // the given address's family, only on the shared socket, and only once per
++  // network, as for a real socket.
 +  std::optional<IPAddress> reflexive = SyntheticReflexiveAddress();
-+  if (reflexive && (session_->flags() & PORTALLOCATOR_DISABLE_UDP) &&
-+      IsFlagSet(PORTALLOCATOR_ENABLE_SHARED_SOCKET) &&
++  if (reflexive && IsFlagSet(PORTALLOCATOR_ENABLE_SHARED_SOCKET) &&
++      ((session_->flags() & PORTALLOCATOR_DISABLE_UDP) || !udp_socket_) &&
 +      reflexive->family() == network_->GetBestIP().family() &&
 +      !absl::c_any_of(session_->ports_,
 +                      [this](const BasicPortAllocatorSession::PortData& p) {
@@ -255,7 +258,7 @@ index 3b36570b20..87ed52e9de 100644
      RTC_LOG(LS_VERBOSE) << "AllocationSequence: UDP ports disabled, skipping.";
      return;
    }
-@@ -1487,7 +1648,11 @@ void AllocationSequence::CreateUDPPorts() {
+@@ -1487,7 +1651,11 @@ void AllocationSequence::CreateUDPPorts() {
        port->SubscribePortDestroyed(
            this, [this](PortInterface* port) { OnPortDestroyed(port); });
        // If STUN is not disabled, setting stun server address to port.
