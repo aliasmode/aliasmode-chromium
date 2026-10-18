@@ -174,4 +174,4 @@ The script prints the exit's IP address and the timezone and languages the packa
 
 ## WebRTC behind a proxy
 
-Behind one SOCKS5 proxy that relays UDP, the browser sends WebRTC's UDP through the proxy. Behind an HTTP, HTTPS or SOCKS4 proxy, WebRTC gets no UDP at all. The two packages differ here. Behind a proxy, the Node package also passes the exit IP from GeoIP as `--fingerprint-webrtc-ip` and adds Chromium's `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`, and the Python package passes neither. [WebRTC](/guides/webrtc) has the details and a leak check.
+Behind one SOCKS5 proxy that relays UDP, the browser sends WebRTC's UDP through the proxy. Behind an HTTP, HTTPS or SOCKS4 proxy, WebRTC gets no UDP at all; with `--fingerprint-webrtc-ip` set to the exit's address, the page still sees that address in a server-reflexive candidate. The two packages differ here. Behind a proxy, the Node package also passes the exit IP from GeoIP as `--fingerprint-webrtc-ip` and adds Chromium's `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`, and the Python package passes neither. [WebRTC](/guides/webrtc) has the details and a leak check.

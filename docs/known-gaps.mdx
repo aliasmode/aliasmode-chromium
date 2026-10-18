@@ -236,7 +236,7 @@ Pages from `launch()`'s `new_page()` open in a normal profile, a temporary one d
 
 ### WebRTC needs a SOCKS5 proxy with UDP
 
-Behind an HTTP, HTTPS or SOCKS4 proxy, or a SOCKS5 proxy without UDP ASSOCIATE, WebRTC gets no UDP at all.
+Behind an HTTP, HTTPS or SOCKS4 proxy, or a SOCKS5 proxy without UDP ASSOCIATE, WebRTC gets no UDP at all. With `--fingerprint-webrtc-ip` the page still sees the given address in a server-reflexive candidate, but calls cannot connect over UDP.
 
 **What to do.** Use a SOCKS5 proxy that relays UDP. [WebRTC](/guides/webrtc) explains the switches.
 

@@ -95,7 +95,7 @@ apostate run -- --fingerprint=42 --fingerprint-platform=windows --fingerprint-lo
 ```text
 apostate fingerprint composition
 
-  chromium            155.0.8059.31
+  chromium            155.0.8059.85
   profile schema      3
   catalogue           v2 (tables f7520eaac2212793d0ed147a82bf52303e77a8b18b91eb9e900c8e56acf0d117)
   platform persona    windows
@@ -216,7 +216,7 @@ An IANA timezone name, such as `Europe/Berlin`. `Intl`, `Date` and the timezone 
 
 ### `--fingerprint-webrtc-ip`
 
-An IP address written into the host and server-reflexive ICE candidates in place of the real address. The browser does not check the value. Packets still leave from the real socket, so a peer can read the real source address off the packets it receives.
+An IP address shown as the public address in the ICE candidates, in place of the real address. An mDNS name stays. The browser does not check the value. Where UDP can be used, packets still leave from the real socket, so a peer can read the real source address off the packets it receives. Where no UDP socket can be opened, such as behind an HTTP proxy, with `--fingerprint-webrtc-udp=block` or under the `disable_non_proxied_udp` policy, the browser gathers a server-reflexive candidate with this address and sends nothing. See [WebRTC](/guides/webrtc#the-switches).
 
 Behind a proxy, the Node package passes the exit address from its GeoIP lookup as this switch. The Python package does not.
 

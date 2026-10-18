@@ -23,9 +23,13 @@ With UDP relayed through SOCKS5, host candidates carry the relay's address, and 
 | --- | --- | --- |
 | `--fingerprint-webrtc-udp` | `direct` | Sends UDP from the host even behind a proxy. The peer sees the host's address. |
 | `--fingerprint-webrtc-udp` | `block` | Never opens a UDP socket. |
-| `--fingerprint-webrtc-ip` | An IP address | Writes this address into host and server-reflexive candidates, and their related addresses, in place of the real one. |
+| `--fingerprint-webrtc-ip` | An IP address | Shows this address as the public address in the candidates, in place of the real one. Where no UDP socket can be opened, the browser still gathers a server-reflexive candidate with it. |
 
-`--fingerprint-webrtc-udp` with any other value is logged and treated as `block`. `--fingerprint-webrtc-ip` changes only the candidate text. The browser does not check the value, and packets still leave from the socket's real address, so a peer that receives them sees where they came from. Use it behind a SOCKS5 proxy, set to the exit's address, so the candidate text and the packets agree.
+`--fingerprint-webrtc-udp` with any other value is logged and treated as `block`.
+
+Where UDP goes direct or through SOCKS5, `--fingerprint-webrtc-ip` changes only the candidate text: the address of server-reflexive candidates, of host candidates that show an address, and of their related addresses. An mDNS name (`<uuid>.local`) and a related address of `0.0.0.0` stay, as stock Chrome shows them. The browser does not check the value, and packets still leave from the socket's real address, so a peer that receives them sees where they came from. Use it behind a SOCKS5 proxy, set to the exit's address, so the candidate text and the packets agree.
+
+Where no UDP socket can be opened, `--fingerprint-webrtc-ip` makes the browser gather candidates for that address anyway. That is behind an HTTP, HTTPS or SOCKS4 proxy and the other setups in the table above, with `--fingerprint-webrtc-udp=block`, and under Chromium's `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`. The browser answers its own STUN binding requests with the address and sends nothing. The page gets a server-reflexive candidate with the address, and host candidates under an mDNS name where the IP handling policy allows host candidates. No packet and no DNS lookup of the STUN server leaves the machine, and connectivity checks fail as they do without UDP. Set it to the proxy's exit address, so the page sees one public address over HTTP and WebRTC.
 
 ## The packages
 
@@ -36,7 +40,7 @@ The two packages differ behind a proxy:
 | `--fingerprint-webrtc-ip` | Not set | Set to the exit IP the GeoIP lookup returned |
 | `--force-webrtc-ip-handling-policy=disable_non_proxied_udp` | Not set | Set |
 
-Behind a SOCKS5 proxy, a Python launch shows an mDNS name (`<uuid>.local`) in its host candidate, as stock Chrome does, and a Node launch shows the exit IP. Both relay UDP through the proxy. The Node package runs the GeoIP lookup behind a proxy even when you pass `locale` and `timezone`, to learn the exit IP. With `geoip: false`, or when the lookup fails, it sets no `--fingerprint-webrtc-ip`.
+Behind a SOCKS5 proxy, a Python launch relays UDP through the proxy and shows an mDNS name (`<uuid>.local`) in its host candidate, as stock Chrome does. A Node launch sets the `disable_non_proxied_udp` policy, so it opens no UDP socket and gathers a server-reflexive candidate with the exit IP, as [the switches](#the-switches) describe. The Node package runs the GeoIP lookup behind a proxy even when you pass `locale` and `timezone`, to learn the exit IP. With `geoip: false`, or when the lookup fails, it sets no `--fingerprint-webrtc-ip`.
 
 To set the address yourself, for example from Python, pass the switch in `args` with the exit's IP:
 
@@ -111,10 +115,10 @@ await browser.close();
 </CodeGroup>
 
 ```text
-candidate:4029357611 1 udp 2113937151 203.0.113.7 49434 typ host generation 0 ufrag 1AJj network-cost 999
-candidate:182797263 1 udp 2113939711 203.0.113.7 55703 typ host generation 0 ufrag 1AJj network-cost 999
-candidate:1616196371 1 udp 1677729535 203.0.113.7 49434 typ srflx raddr 203.0.113.7 rport 0 generation 0 ufrag 1AJj network-cost 999
-candidate:306696160 1 udp 1677732095 203.0.113.7 55703 typ srflx raddr 203.0.113.7 rport 0 generation 0 ufrag 1AJj network-cost 999
+candidate:4029357611 1 udp 2113937151 0c6f1d2e-58a4-4b7e-9f3a-6d2b1e8c7a90.local 49434 typ host generation 0 ufrag 1AJj network-cost 999
+candidate:182797263 1 udp 2113939711 5b9e2a71-c3d8-4f06-a1e4-87f2d0b6c3a5.local 55703 typ host generation 0 ufrag 1AJj network-cost 999
+candidate:1616196371 1 udp 1677729535 203.0.113.7 49434 typ srflx raddr 0.0.0.0 rport 0 generation 0 ufrag 1AJj network-cost 999
+candidate:306696160 1 udp 1677732095 203.0.113.7 55703 typ srflx raddr 0.0.0.0 rport 0 generation 0 ufrag 1AJj network-cost 999
 ```
 
 With `--fingerprint-webrtc-udp=block` in place of the address, the same script prints nothing.
@@ -123,6 +127,6 @@ To check a proxied setup, remove the `args` line, add your `proxy`, and read eac
 
 - `typ host` shows an mDNS name ending in `.local`, or the address `--fingerprint-webrtc-ip` set. It must not show the host's real address.
 - `typ srflx` is the address the STUN server saw. It must be the proxy's exit, the IP the [proxy check](/guides/proxies#check-the-exit-from-a-page) prints.
-- No candidates at all means the proxy carries no UDP. Pages that use WebRTC for calls then fail, and a page can see that WebRTC gathered nothing. [Known gaps](/known-gaps#webrtc-needs-a-socks5-proxy-with-udp) tracks this.
+- No candidates at all means the proxy carries no UDP and no `--fingerprint-webrtc-ip` is set. Pages that use WebRTC for calls then fail, and a page can see that WebRTC gathered nothing. [Known gaps](/known-gaps#webrtc-needs-a-socks5-proxy-with-udp) tracks this.
 
 [Verify](/guides/verify) covers checking a launch with public test pages.

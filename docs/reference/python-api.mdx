@@ -230,7 +230,7 @@ The same search, with what was searched and why each candidate was refused.
 A `reason` is one of these:
 
 - `no Apostate payload beside it (build/MANIFEST.lock or resources/profiles/catalogue.json)`: a browser with no Apostate build record or catalogue beside it, such as stock Chromium.
-- `reports Chromium <version>, not 155.0.8059.31`: an Apostate build of another version.
+- `reports Chromium <version>, not 155.0.8059.85`: an Apostate build of another version.
 - `version could not be established`, or `not executable`.
 - `the configured path does not name a file`, `APOSTATE_BINARY does not name a file`, or `... names a directory with no browser inside it (expected Chromium.app, chrome or chrome.exe)`: a path you named that holds no browser.
 
@@ -286,7 +286,7 @@ Resolves the launch selectors without starting anything. `geoip` is a lookup res
 >>> apostate.resolve_profile(fingerprint=42, fingerprint_platform="windows",
 ...                          locale="de-DE", timezone="Europe/Berlin").to_dict()
 {'profile': {}, 'profile_id': 'native-composed', 'catalogue_version': 2,
- 'profile_schema_version': 3, 'browser_build': '155.0.8059.31', 'platform': 'windows',
+ 'profile_schema_version': 3, 'browser_build': '155.0.8059.85', 'platform': 'windows',
  'locale_source': 'explicit', 'timezone_source': 'explicit', 'locale': 'de-DE',
  'timezone': 'Europe/Berlin', 'identity': '098c02ee95819f13e04326c5b636fc82957743fc70a314ab0fbf90e17afa11de',
  'warnings': []}
@@ -515,7 +515,7 @@ Exported as `discover_widevine`. Every CDM on this machine for `target`, newest 
 | Name | Value in 0.4.4 | Meaning |
 | --- | --- | --- |
 | `PACKAGE_VERSION` | `"0.4.4"` | This package's version. |
-| `CHROMIUM_VERSION` | `"155.0.8059.31"` | The browser build this package installs and speaks to. |
+| `CHROMIUM_VERSION` | `"155.0.8059.85"` | The browser build this package installs and speaks to. |
 | `CATALOGUE_VERSION` | `2` | The catalogue version the browser composes from. |
 | `PROFILE_SCHEMA_VERSION` | `3` | The version of `config/profile.schema.json`. |
 | `DEFAULT_PERSONA_BY_HOST` | see [above](#default_persona_by_host) | The default persona per host. |
