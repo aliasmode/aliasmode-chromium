@@ -279,7 +279,7 @@
    "file": "dispersion/font_packs.json",
    "label": "font_packs",
    "option_sets": 7,
-   "options": 8,
+   "options": 20,
    "selection": "core-plus-subset",
    "servability": "none"
   },
@@ -339,7 +339,7 @@
    "file": "dispersion/voices.json",
    "label": "voices",
    "option_sets": 21,
-   "options": 21,
+   "options": 381,
    "selection": "single",
    "servability": "none"
   },

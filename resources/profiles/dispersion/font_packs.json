@@ -736,7 +736,7 @@
     {
      "evidence": "catalogue-value",
      "id": "platform-core",
-     "note": "Stock Windows 11 families: the Win11 English release font set intersected with the MauCariApa-com/windows-11-fonts repo, plus Marlett. The repo does not ship Marlett, so a host without it simply does not show it.",
+     "note": "Stock Windows 11 families: the Win11 English release font set intersected with the MauCariApa-com/windows-11-fonts repo, plus Marlett. The repo does not ship Marlett, so a host without it simply does not show it. Four groups of rarely used families are optional packs, drawn per seed.",
      "pack_kind": "core",
      "requires": {
       "families": [
@@ -754,9 +754,7 @@
        "Corbel",
        "Corbel Light",
        "Courier New",
-       "Ebrima",
        "Franklin Gothic Medium",
-       "Gabriola",
        "Gadugi",
        "Georgia",
        "Impact",
@@ -769,52 +767,36 @@
        "MS Gothic",
        "MS PGothic",
        "MS UI Gothic",
-       "MV Boli",
        "Malgun Gothic",
        "Malgun Gothic Semilight",
-       "Microsoft Himalaya",
        "Microsoft JhengHei",
        "Microsoft JhengHei Light",
        "Microsoft JhengHei UI",
        "Microsoft JhengHei UI Light",
-       "Microsoft New Tai Lue",
-       "Microsoft PhagsPa",
        "Microsoft Sans Serif",
-       "Microsoft Tai Le",
        "Microsoft YaHei",
        "Microsoft YaHei Light",
        "Microsoft YaHei UI",
        "Microsoft YaHei UI Light",
-       "Microsoft Yi Baiti",
-       "MingLiU-ExtB",
-       "MingLiU_HKSCS-ExtB",
-       "Mongolian Baiti",
        "Myanmar Text",
        "NSimSun",
        "Nirmala UI",
        "Nirmala UI Semilight",
-       "PMingLiU-ExtB",
        "Palatino Linotype",
        "Sans Serif Collection",
        "Segoe Fluent Icons",
        "Segoe MDL2 Assets",
-       "Segoe Print",
-       "Segoe Script",
        "Segoe UI",
        "Segoe UI Black",
        "Segoe UI Emoji",
-       "Segoe UI Historic",
        "Segoe UI Light",
        "Segoe UI Semibold",
        "Segoe UI Semilight",
        "Segoe UI Symbol",
        "Segoe UI Variable",
        "SimSun",
-       "SimSun-ExtB",
-       "SimSun-ExtG",
        "Sitka",
        "Sitka Text",
-       "Sylfaen",
        "Symbol",
        "Tahoma",
        "Times New Roman",
@@ -849,9 +831,7 @@
         "Corbel",
         "Corbel Light",
         "Courier New",
-        "Ebrima",
         "Franklin Gothic Medium",
-        "Gabriola",
         "Gadugi",
         "Georgia",
         "Impact",
@@ -864,42 +844,29 @@
         "MS Gothic",
         "MS PGothic",
         "MS UI Gothic",
-        "MV Boli",
         "Malgun Gothic",
         "Malgun Gothic Semilight",
         "Marlett",
-        "Microsoft Himalaya",
         "Microsoft JhengHei",
         "Microsoft JhengHei Light",
         "Microsoft JhengHei UI",
         "Microsoft JhengHei UI Light",
-        "Microsoft New Tai Lue",
-        "Microsoft PhagsPa",
         "Microsoft Sans Serif",
-        "Microsoft Tai Le",
         "Microsoft YaHei",
         "Microsoft YaHei Light",
         "Microsoft YaHei UI",
         "Microsoft YaHei UI Light",
-        "Microsoft Yi Baiti",
-        "MingLiU-ExtB",
-        "MingLiU_HKSCS-ExtB",
-        "Mongolian Baiti",
         "Myanmar Text",
         "NSimSun",
         "Nirmala UI",
         "Nirmala UI Semilight",
-        "PMingLiU-ExtB",
         "Palatino Linotype",
         "Sans Serif Collection",
         "Segoe Fluent Icons",
         "Segoe MDL2 Assets",
-        "Segoe Print",
-        "Segoe Script",
         "Segoe UI",
         "Segoe UI Black",
         "Segoe UI Emoji",
-        "Segoe UI Historic",
         "Segoe UI Light",
         "Segoe UI Semibold",
         "Segoe UI Semilight",
@@ -908,15 +875,12 @@
         "Segoe UI Variable Small",
         "Segoe UI Variable Text",
         "SimSun",
-        "SimSun-ExtB",
-        "SimSun-ExtG",
         "Sitka Banner",
         "Sitka Display",
         "Sitka Heading",
         "Sitka Small",
         "Sitka Subheading",
         "Sitka Text",
-        "Sylfaen",
         "Symbol",
         "Tahoma",
         "Times New Roman",
@@ -942,6 +906,114 @@
       }
      },
      "weight": 100
+    },
+    {
+     "evidence": "catalogue-value",
+     "id": "windows-handwriting",
+     "note": "Decorative handwriting families. Stock Windows ships them; a profile draws whether it shows them, so profiles on one computer list different fonts. Families pages rely on and the families that mark a Windows version stay in the core pack.",
+     "pack_kind": "optional",
+     "requires": {
+      "families": [
+       "Gabriola",
+       "MV Boli",
+       "Segoe Print",
+       "Segoe Script"
+      ]
+     },
+     "source": "https://github.com/liblaf/fonts/releases/download/Win11/Win11-English.zip intersected with https://github.com/MauCariApa-com/windows-11-fonts",
+     "value": {
+      "fonts": {
+       "enumeration_allowlist": [
+        "Gabriola",
+        "MV Boli",
+        "Segoe Print",
+        "Segoe Script"
+       ]
+      }
+     },
+     "weight": 70
+    },
+    {
+     "evidence": "catalogue-value",
+     "id": "windows-supplemental-scripts",
+     "note": "Families for Tibetan, Tai Lue, Phags-pa, Tai Le, Yi and Mongolian script. Stock Windows ships them; a profile draws whether it shows them, so profiles on one computer list different fonts. Families pages rely on and the families that mark a Windows version stay in the core pack.",
+     "pack_kind": "optional",
+     "requires": {
+      "families": [
+       "Microsoft Himalaya",
+       "Microsoft New Tai Lue",
+       "Microsoft PhagsPa",
+       "Microsoft Tai Le",
+       "Microsoft Yi Baiti",
+       "Mongolian Baiti"
+      ]
+     },
+     "source": "https://github.com/liblaf/fonts/releases/download/Win11/Win11-English.zip intersected with https://github.com/MauCariApa-com/windows-11-fonts",
+     "value": {
+      "fonts": {
+       "enumeration_allowlist": [
+        "Microsoft Himalaya",
+        "Microsoft New Tai Lue",
+        "Microsoft PhagsPa",
+        "Microsoft Tai Le",
+        "Microsoft Yi Baiti",
+        "Mongolian Baiti"
+       ]
+      }
+     },
+     "weight": 70
+    },
+    {
+     "evidence": "catalogue-value",
+     "id": "windows-historic-scripts",
+     "note": "Families for African, historic, Georgian and Armenian script. Stock Windows ships them; a profile draws whether it shows them, so profiles on one computer list different fonts. Families pages rely on and the families that mark a Windows version stay in the core pack.",
+     "pack_kind": "optional",
+     "requires": {
+      "families": [
+       "Ebrima",
+       "Segoe UI Historic",
+       "Sylfaen"
+      ]
+     },
+     "source": "https://github.com/liblaf/fonts/releases/download/Win11/Win11-English.zip intersected with https://github.com/MauCariApa-com/windows-11-fonts",
+     "value": {
+      "fonts": {
+       "enumeration_allowlist": [
+        "Ebrima",
+        "Segoe UI Historic",
+        "Sylfaen"
+       ]
+      }
+     },
+     "weight": 75
+    },
+    {
+     "evidence": "catalogue-value",
+     "id": "windows-cjk-extension-b",
+     "note": "CJK Extension B families. Stock Windows ships them; a profile draws whether it shows them, so profiles on one computer list different fonts. Families pages rely on and the families that mark a Windows version stay in the core pack.",
+     "pack_kind": "optional",
+     "requires": {
+      "families": [
+       "MingLiU-ExtB",
+       "MingLiU_HKSCS-ExtB",
+       "PMingLiU-ExtB",
+       "SimSun-ExtB",
+       "SimSun-ExtG"
+      ]
+     },
+     "source": "https://github.com/liblaf/fonts/releases/download/Win11/Win11-English.zip intersected with https://github.com/MauCariApa-com/windows-11-fonts",
+     "value": {
+      "fonts": {
+       "enumeration_allowlist": [
+        "MingLiU-ExtB",
+        "MingLiU_HKSCS-ExtB",
+        "PMingLiU-ExtB",
+        "SimSun-ExtB",
+        "SimSun-ExtG"
+       ]
+      }
+     },
+     "weight": 70
     }
    ]
   },
@@ -954,7 +1026,7 @@
     {
      "evidence": "catalogue-value",
      "id": "platform-core",
-     "note": "Stock Windows 10 families: the Windows 11 list without Sans Serif Collection, Segoe Fluent Icons, Segoe UI Variable and SimSun-ExtG, which only Windows 11 ships. The repo does not ship Marlett, so a host without it simply does not show it.",
+     "note": "Stock Windows 10 families: the Windows 11 list without Sans Serif Collection, Segoe Fluent Icons, Segoe UI Variable and SimSun-ExtG, which only Windows 11 ships. The repo does not ship Marlett, so a host without it simply does not show it. Four groups of rarely used families are optional packs, drawn per seed.",
      "pack_kind": "core",
      "requires": {
       "families": [
@@ -972,9 +1044,7 @@
        "Corbel",
        "Corbel Light",
        "Courier New",
-       "Ebrima",
        "Franklin Gothic Medium",
-       "Gabriola",
        "Gadugi",
        "Georgia",
        "Impact",
@@ -987,48 +1057,33 @@
        "MS Gothic",
        "MS PGothic",
        "MS UI Gothic",
-       "MV Boli",
        "Malgun Gothic",
        "Malgun Gothic Semilight",
-       "Microsoft Himalaya",
        "Microsoft JhengHei",
        "Microsoft JhengHei Light",
        "Microsoft JhengHei UI",
        "Microsoft JhengHei UI Light",
-       "Microsoft New Tai Lue",
-       "Microsoft PhagsPa",
        "Microsoft Sans Serif",
-       "Microsoft Tai Le",
        "Microsoft YaHei",
        "Microsoft YaHei Light",
        "Microsoft YaHei UI",
        "Microsoft YaHei UI Light",
-       "Microsoft Yi Baiti",
-       "MingLiU-ExtB",
-       "MingLiU_HKSCS-ExtB",
-       "Mongolian Baiti",
        "Myanmar Text",
        "NSimSun",
        "Nirmala UI",
        "Nirmala UI Semilight",
-       "PMingLiU-ExtB",
        "Palatino Linotype",
        "Segoe MDL2 Assets",
-       "Segoe Print",
-       "Segoe Script",
        "Segoe UI",
        "Segoe UI Black",
        "Segoe UI Emoji",
-       "Segoe UI Historic",
        "Segoe UI Light",
        "Segoe UI Semibold",
        "Segoe UI Semilight",
        "Segoe UI Symbol",
        "SimSun",
-       "SimSun-ExtB",
        "Sitka",
        "Sitka Text",
-       "Sylfaen",
        "Symbol",
        "Tahoma",
        "Times New Roman",
@@ -1063,9 +1118,7 @@
         "Corbel",
         "Corbel Light",
         "Courier New",
-        "Ebrima",
         "Franklin Gothic Medium",
-        "Gabriola",
         "Gadugi",
         "Georgia",
         "Impact",
@@ -1078,53 +1131,38 @@
         "MS Gothic",
         "MS PGothic",
         "MS UI Gothic",
-        "MV Boli",
         "Malgun Gothic",
         "Malgun Gothic Semilight",
         "Marlett",
-        "Microsoft Himalaya",
         "Microsoft JhengHei",
         "Microsoft JhengHei Light",
         "Microsoft JhengHei UI",
         "Microsoft JhengHei UI Light",
-        "Microsoft New Tai Lue",
-        "Microsoft PhagsPa",
         "Microsoft Sans Serif",
-        "Microsoft Tai Le",
         "Microsoft YaHei",
         "Microsoft YaHei Light",
         "Microsoft YaHei UI",
         "Microsoft YaHei UI Light",
-        "Microsoft Yi Baiti",
-        "MingLiU-ExtB",
-        "MingLiU_HKSCS-ExtB",
-        "Mongolian Baiti",
         "Myanmar Text",
         "NSimSun",
         "Nirmala UI",
         "Nirmala UI Semilight",
-        "PMingLiU-ExtB",
         "Palatino Linotype",
         "Segoe MDL2 Assets",
-        "Segoe Print",
-        "Segoe Script",
         "Segoe UI",
         "Segoe UI Black",
         "Segoe UI Emoji",
-        "Segoe UI Historic",
         "Segoe UI Light",
         "Segoe UI Semibold",
         "Segoe UI Semilight",
         "Segoe UI Symbol",
         "SimSun",
-        "SimSun-ExtB",
         "Sitka Banner",
         "Sitka Display",
         "Sitka Heading",
         "Sitka Small",
         "Sitka Subheading",
         "Sitka Text",
-        "Sylfaen",
         "Symbol",
         "Tahoma",
         "Times New Roman",
@@ -1150,6 +1188,112 @@
       }
      },
      "weight": 100
+    },
+    {
+     "evidence": "catalogue-value",
+     "id": "windows-handwriting",
+     "note": "Decorative handwriting families. Stock Windows ships them; a profile draws whether it shows them, so profiles on one computer list different fonts. Families pages rely on and the families that mark a Windows version stay in the core pack.",
+     "pack_kind": "optional",
+     "requires": {
+      "families": [
+       "Gabriola",
+       "MV Boli",
+       "Segoe Print",
+       "Segoe Script"
+      ]
+     },
+     "source": "https://github.com/liblaf/fonts/releases/download/Win11/Win11-English.zip intersected with https://github.com/MauCariApa-com/windows-11-fonts",
+     "value": {
+      "fonts": {
+       "enumeration_allowlist": [
+        "Gabriola",
+        "MV Boli",
+        "Segoe Print",
+        "Segoe Script"
+       ]
+      }
+     },
+     "weight": 70
+    },
+    {
+     "evidence": "catalogue-value",
+     "id": "windows-supplemental-scripts",
+     "note": "Families for Tibetan, Tai Lue, Phags-pa, Tai Le, Yi and Mongolian script. Stock Windows ships them; a profile draws whether it shows them, so profiles on one computer list different fonts. Families pages rely on and the families that mark a Windows version stay in the core pack.",
+     "pack_kind": "optional",
+     "requires": {
+      "families": [
+       "Microsoft Himalaya",
+       "Microsoft New Tai Lue",
+       "Microsoft PhagsPa",
+       "Microsoft Tai Le",
+       "Microsoft Yi Baiti",
+       "Mongolian Baiti"
+      ]
+     },
+     "source": "https://github.com/liblaf/fonts/releases/download/Win11/Win11-English.zip intersected with https://github.com/MauCariApa-com/windows-11-fonts",
+     "value": {
+      "fonts": {
+       "enumeration_allowlist": [
+        "Microsoft Himalaya",
+        "Microsoft New Tai Lue",
+        "Microsoft PhagsPa",
+        "Microsoft Tai Le",
+        "Microsoft Yi Baiti",
+        "Mongolian Baiti"
+       ]
+      }
+     },
+     "weight": 70
+    },
+    {
+     "evidence": "catalogue-value",
+     "id": "windows-historic-scripts",
+     "note": "Families for African, historic, Georgian and Armenian script. Stock Windows ships them; a profile draws whether it shows them, so profiles on one computer list different fonts. Families pages rely on and the families that mark a Windows version stay in the core pack.",
+     "pack_kind": "optional",
+     "requires": {
+      "families": [
+       "Ebrima",
+       "Segoe UI Historic",
+       "Sylfaen"
+      ]
+     },
+     "source": "https://github.com/liblaf/fonts/releases/download/Win11/Win11-English.zip intersected with https://github.com/MauCariApa-com/windows-11-fonts",
+     "value": {
+      "fonts": {
+       "enumeration_allowlist": [
+        "Ebrima",
+        "Segoe UI Historic",
+        "Sylfaen"
+       ]
+      }
+     },
+     "weight": 75
+    },
+    {
+     "evidence": "catalogue-value",
+     "id": "windows-cjk-extension-b",
+     "note": "CJK Extension B families. Stock Windows ships them; a profile draws whether it shows them, so profiles on one computer list different fonts. Families pages rely on and the families that mark a Windows version stay in the core pack.",
+     "pack_kind": "optional",
+     "requires": {
+      "families": [
+       "MingLiU-ExtB",
+       "MingLiU_HKSCS-ExtB",
+       "PMingLiU-ExtB",
+       "SimSun-ExtB"
+      ]
+     },
+     "source": "https://github.com/liblaf/fonts/releases/download/Win11/Win11-English.zip intersected with https://github.com/MauCariApa-com/windows-11-fonts",
+     "value": {
+      "fonts": {
+       "enumeration_allowlist": [
+        "MingLiU-ExtB",
+        "MingLiU_HKSCS-ExtB",
+        "PMingLiU-ExtB",
+        "SimSun-ExtB"
+       ]
+      }
+     },
+     "weight": 70
     }
    ]
   },
@@ -1232,7 +1376,7 @@
     {
      "evidence": "catalogue-value",
      "id": "platform-core",
-     "note": "Stock Windows 11 families: the Win11 English release font set intersected with the MauCariApa-com/windows-11-fonts repo, plus Marlett. The repo does not ship Marlett, so a host without it simply does not show it.",
+     "note": "Stock Windows 11 families: the Win11 English release font set intersected with the MauCariApa-com/windows-11-fonts repo, plus Marlett. The repo does not ship Marlett, so a host without it simply does not show it. Four groups of rarely used families are optional packs, drawn per seed.",
      "pack_kind": "core",
      "requires": {
       "families": [
@@ -1250,9 +1394,7 @@
        "Corbel",
        "Corbel Light",
        "Courier New",
-       "Ebrima",
        "Franklin Gothic Medium",
-       "Gabriola",
        "Gadugi",
        "Georgia",
        "Impact",
@@ -1265,52 +1407,36 @@
        "MS Gothic",
        "MS PGothic",
        "MS UI Gothic",
-       "MV Boli",
        "Malgun Gothic",
        "Malgun Gothic Semilight",
-       "Microsoft Himalaya",
        "Microsoft JhengHei",
        "Microsoft JhengHei Light",
        "Microsoft JhengHei UI",
        "Microsoft JhengHei UI Light",
-       "Microsoft New Tai Lue",
-       "Microsoft PhagsPa",
        "Microsoft Sans Serif",
-       "Microsoft Tai Le",
        "Microsoft YaHei",
        "Microsoft YaHei Light",
        "Microsoft YaHei UI",
        "Microsoft YaHei UI Light",
-       "Microsoft Yi Baiti",
-       "MingLiU-ExtB",
-       "MingLiU_HKSCS-ExtB",
-       "Mongolian Baiti",
        "Myanmar Text",
        "NSimSun",
        "Nirmala UI",
        "Nirmala UI Semilight",
-       "PMingLiU-ExtB",
        "Palatino Linotype",
        "Sans Serif Collection",
        "Segoe Fluent Icons",
        "Segoe MDL2 Assets",
-       "Segoe Print",
-       "Segoe Script",
        "Segoe UI",
        "Segoe UI Black",
        "Segoe UI Emoji",
-       "Segoe UI Historic",
        "Segoe UI Light",
        "Segoe UI Semibold",
        "Segoe UI Semilight",
        "Segoe UI Symbol",
        "Segoe UI Variable",
        "SimSun",
-       "SimSun-ExtB",
-       "SimSun-ExtG",
        "Sitka",
        "Sitka Text",
-       "Sylfaen",
        "Symbol",
        "Tahoma",
        "Times New Roman",
@@ -1345,9 +1471,7 @@
         "Corbel",
         "Corbel Light",
         "Courier New",
-        "Ebrima",
         "Franklin Gothic Medium",
-        "Gabriola",
         "Gadugi",
         "Georgia",
         "Impact",
@@ -1360,42 +1484,29 @@
         "MS Gothic",
         "MS PGothic",
         "MS UI Gothic",
-        "MV Boli",
         "Malgun Gothic",
         "Malgun Gothic Semilight",
         "Marlett",
-        "Microsoft Himalaya",
         "Microsoft JhengHei",
         "Microsoft JhengHei Light",
         "Microsoft JhengHei UI",
         "Microsoft JhengHei UI Light",
-        "Microsoft New Tai Lue",
-        "Microsoft PhagsPa",
         "Microsoft Sans Serif",
-        "Microsoft Tai Le",
         "Microsoft YaHei",
         "Microsoft YaHei Light",
         "Microsoft YaHei UI",
         "Microsoft YaHei UI Light",
-        "Microsoft Yi Baiti",
-        "MingLiU-ExtB",
-        "MingLiU_HKSCS-ExtB",
-        "Mongolian Baiti",
         "Myanmar Text",
         "NSimSun",
         "Nirmala UI",
         "Nirmala UI Semilight",
-        "PMingLiU-ExtB",
         "Palatino Linotype",
         "Sans Serif Collection",
         "Segoe Fluent Icons",
         "Segoe MDL2 Assets",
-        "Segoe Print",
-        "Segoe Script",
         "Segoe UI",
         "Segoe UI Black",
         "Segoe UI Emoji",
-        "Segoe UI Historic",
         "Segoe UI Light",
         "Segoe UI Semibold",
         "Segoe UI Semilight",
@@ -1404,15 +1515,12 @@
         "Segoe UI Variable Small",
         "Segoe UI Variable Text",
         "SimSun",
-        "SimSun-ExtB",
-        "SimSun-ExtG",
         "Sitka Banner",
         "Sitka Display",
         "Sitka Heading",
         "Sitka Small",
         "Sitka Subheading",
         "Sitka Text",
-        "Sylfaen",
         "Symbol",
         "Tahoma",
         "Times New Roman",
@@ -1438,6 +1546,114 @@
       }
      },
      "weight": 100
+    },
+    {
+     "evidence": "catalogue-value",
+     "id": "windows-handwriting",
+     "note": "Decorative handwriting families. Stock Windows ships them; a profile draws whether it shows them, so profiles on one computer list different fonts. Families pages rely on and the families that mark a Windows version stay in the core pack.",
+     "pack_kind": "optional",
+     "requires": {
+      "families": [
+       "Gabriola",
+       "MV Boli",
+       "Segoe Print",
+       "Segoe Script"
+      ]
+     },
+     "source": "https://github.com/liblaf/fonts/releases/download/Win11/Win11-English.zip intersected with https://github.com/MauCariApa-com/windows-11-fonts",
+     "value": {
+      "fonts": {
+       "enumeration_allowlist": [
+        "Gabriola",
+        "MV Boli",
+        "Segoe Print",
+        "Segoe Script"
+       ]
+      }
+     },
+     "weight": 70
+    },
+    {
+     "evidence": "catalogue-value",
+     "id": "windows-supplemental-scripts",
+     "note": "Families for Tibetan, Tai Lue, Phags-pa, Tai Le, Yi and Mongolian script. Stock Windows ships them; a profile draws whether it shows them, so profiles on one computer list different fonts. Families pages rely on and the families that mark a Windows version stay in the core pack.",
+     "pack_kind": "optional",
+     "requires": {
+      "families": [
+       "Microsoft Himalaya",
+       "Microsoft New Tai Lue",
+       "Microsoft PhagsPa",
+       "Microsoft Tai Le",
+       "Microsoft Yi Baiti",
+       "Mongolian Baiti"
+      ]
+     },
+     "source": "https://github.com/liblaf/fonts/releases/download/Win11/Win11-English.zip intersected with https://github.com/MauCariApa-com/windows-11-fonts",
+     "value": {
+      "fonts": {
+       "enumeration_allowlist": [
+        "Microsoft Himalaya",
+        "Microsoft New Tai Lue",
+        "Microsoft PhagsPa",
+        "Microsoft Tai Le",
+        "Microsoft Yi Baiti",
+        "Mongolian Baiti"
+       ]
+      }
+     },
+     "weight": 70
+    },
+    {
+     "evidence": "catalogue-value",
+     "id": "windows-historic-scripts",
+     "note": "Families for African, historic, Georgian and Armenian script. Stock Windows ships them; a profile draws whether it shows them, so profiles on one computer list different fonts. Families pages rely on and the families that mark a Windows version stay in the core pack.",
+     "pack_kind": "optional",
+     "requires": {
+      "families": [
+       "Ebrima",
+       "Segoe UI Historic",
+       "Sylfaen"
+      ]
+     },
+     "source": "https://github.com/liblaf/fonts/releases/download/Win11/Win11-English.zip intersected with https://github.com/MauCariApa-com/windows-11-fonts",
+     "value": {
+      "fonts": {
+       "enumeration_allowlist": [
+        "Ebrima",
+        "Segoe UI Historic",
+        "Sylfaen"
+       ]
+      }
+     },
+     "weight": 75
+    },
+    {
+     "evidence": "catalogue-value",
+     "id": "windows-cjk-extension-b",
+     "note": "CJK Extension B families. Stock Windows ships them; a profile draws whether it shows them, so profiles on one computer list different fonts. Families pages rely on and the families that mark a Windows version stay in the core pack.",
+     "pack_kind": "optional",
+     "requires": {
+      "families": [
+       "MingLiU-ExtB",
+       "MingLiU_HKSCS-ExtB",
+       "PMingLiU-ExtB",
+       "SimSun-ExtB",
+       "SimSun-ExtG"
+      ]
+     },
+     "source": "https://github.com/liblaf/fonts/releases/download/Win11/Win11-English.zip intersected with https://github.com/MauCariApa-com/windows-11-fonts",
+     "value": {
+      "fonts": {
+       "enumeration_allowlist": [
+        "MingLiU-ExtB",
+        "MingLiU_HKSCS-ExtB",
+        "PMingLiU-ExtB",
+        "SimSun-ExtB",
+        "SimSun-ExtG"
+       ]
+      }
+     },
+     "weight": 70
     }
    ]
   }

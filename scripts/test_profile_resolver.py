@@ -870,8 +870,11 @@ class CompositionTests(unittest.TestCase):
                                ("en-GB,en-US,en", "windows-en-gb")):
             envelope = resolver.resolve_with_diagnostics(
                 dict(BASE_CONFIG, fingerprint_locale=locale))
-            self.assertEqual([voices], envelope["diagnostics"]["axes"]["voices"]["options"],
-                             locale)
+            # The locale's own install, alone or with extra speech packs.
+            chosen = envelope["diagnostics"]["axes"]["voices"]["options"]
+            self.assertEqual(1, len(chosen), locale)
+            self.assertTrue(chosen[0] == voices or chosen[0].startswith(voices + "."),
+                            (locale, chosen))
         # A locale the table does not key on is served that platform's own voices.
         # It used to be served the host's, which under a foreign persona is the
         # one answer that cannot be a machine.
@@ -1000,9 +1003,13 @@ class CompositionTests(unittest.TestCase):
         # On this ARM host the Windows persona draws the Adreno family (patch
         # 0154); seed 12345 draws the 12-core X1-85, which the 14-core host
         # can serve. Refreshed from the 155.0.8059.12 nightly build
-        # (run 36448982772) on 2026-09-29.
+        # (run 36448982772) on 2026-09-29. The optional Windows font packs and
+        # voice variants of 2026-10-19 moved it; AliasMode builds only Windows
+        # x86, which cannot compose this ARM-host profile, so the new digest is
+        # the resolver's, after the native compositor of that build composed
+        # byte-identical profiles for the same seeds on its own host.
         "windows": ("fp-b0b97b3a3531b65ee50f45fc", GOLDEN_SECTIONS,
-                    "67924d702f328f8e026b2298483e18409b5a485b0cff546441e11b72f2986f19"),
+                    "57f1181aafdafc263a0dd787bd5db3dc164753bba03ddcbd73d6a69608285218"),
         "macos": ("fp-60eab51485a4a8465ce3c24a", GOLDEN_SECTIONS,
                   "70a5713449ce75d8ef0cc3d027bef4acc321254942790cfa5e486c0105f8195a"),
         "linux": ("fp-8c5f63da9ef88ea749549a91", GOLDEN_SECTIONS,
