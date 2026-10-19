@@ -12,14 +12,15 @@ and its alpha each move by up to two steps and stay inside that range,
 so the pixel is still a plausible blend. Solid fills, hard edges,
 straight half-pixel edges and lone dots read back exactly as drawn.
 
-The step depends on the pixel's position on the canvas, not in the
-returned rectangle, and getImageData reads a one-pixel border inside the
-canvas to decide its edge pixels, so a read of part of a canvas agrees
-with a read of all of it and with toDataURL and toBlob. A read that
-reaches past the canvas no longer fills the outside with unset memory.
+The step no longer depends on the pixel's position, only on the pixel
+and its neighbours, so one shape drawn at two places reads back the
+same. getImageData reads a one-pixel border inside the canvas to decide
+the pixels at its edges, so a read of part of a canvas agrees with a
+read of all of it and with toDataURL and toBlob. A read that reaches
+past the canvas no longer fills the outside with unset memory.
 
 diff --git a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc
-index 4f1b90c..3e60fd4 100644
+index 4f1b90c..93c6430 100644
 --- a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc
 +++ b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc
 @@ -6,6 +6,7 @@
@@ -78,7 +79,7 @@ index 4f1b90c..3e60fd4 100644
  // same answer; this is the cheap path and the explicit guarantee.
  bool WholeSurfaceIsOneValue(const Surface& surface) {
    const size_t row_bytes = surface.pixel_stride *
-@@ -400,13 +412,38 @@ base::span<uint8_t> PixelAt(const Surface& surface, int32_t x, int32_t y) {
+@@ -400,13 +412,36 @@ base::span<uint8_t> PixelAt(const Surface& surface, int32_t x, int32_t y) {
        surface.pixel_stride);
  }
  
@@ -101,17 +102,15 @@ index 4f1b90c..3e60fd4 100644
    }
  }
  
-+// The part of a surface to perturb, and where the surface sits on the canvas.
-+// Neighbourhoods are read from the whole surface, so a caller that hands in
-+// the requested rectangle plus a one-pixel border inside the canvas gets the
-+// same answer for every pixel as a read of the whole canvas would.
++// The part of a surface to perturb. Neighbourhoods are read from the whole
++// surface, so a caller that hands in the requested rectangle plus a one-pixel
++// border inside the canvas gets the same answer for every pixel as a read of
++// the whole canvas would.
 +struct Region {
 +  int32_t left = 0;
 +  int32_t top = 0;
 +  int32_t right = 0;
 +  int32_t bottom = 0;
-+  int64_t canvas_x = 0;
-+  int64_t canvas_y = 0;
 +};
 +
 +// Stands in for a neighbour outside the canvas in the hash input.
@@ -120,7 +119,7 @@ index 4f1b90c..3e60fd4 100644
  std::optional<Channels> ChannelsForColorType(SkColorType color_type,
                                               SkAlphaType alpha_type) {
    constexpr uint8_t kNone = Channels::kAbsent;
-@@ -483,23 +520,18 @@ std::optional<Channels> ChannelsForColorType(SkColorType color_type,
+@@ -483,23 +518,18 @@ std::optional<Channels> ChannelsForColorType(SkColorType color_type,
    }
  }
  
@@ -150,7 +149,7 @@ index 4f1b90c..3e60fd4 100644
    const size_t extent =
        surface.row_stride * static_cast<size_t>(surface.height - 1) +
        surface.pixel_stride * static_cast<size_t>(surface.width);
-@@ -510,93 +542,166 @@ void Apply(const Surface& surface) {
+@@ -510,93 +540,166 @@ void Apply(const Surface& surface) {
    if (channels.logical[0] == Channels::kAbsent &&
        channels.logical[1] == Channels::kAbsent &&
        channels.logical[2] == Channels::kAbsent) {
@@ -282,6 +281,10 @@ index 4f1b90c..3e60fd4 100644
          continue;
        }
  
++      // The step depends on the pixel and its neighbours and not on where
++      // they are, as a rasteriser's own differences would: the same shape
++      // drawn at two places reads back the same, and so does a read of part
++      // of the canvas.
        NoiseHash hash = origin;
        hash.Update(centre);
 -      for (int32_t dy = 0; dy < 3; ++dy) {
@@ -294,10 +297,6 @@ index 4f1b90c..3e60fd4 100644
        }
 -      hash.Update((static_cast<uint64_t>(y) << 32) |
 -                  static_cast<uint32_t>(x));
-+      // Canvas coordinates, so a read of part of the canvas agrees with a
-+      // read of all of it.
-+      hash.Update((static_cast<uint64_t>(region.canvas_y + y) << 32) |
-+                  static_cast<uint32_t>(region.canvas_x + x));
  
        base::span<uint8_t> pixel = PixelAt(surface, x, y);
 -      // Red, then green, then blue, by logical channel rather than by
@@ -367,7 +366,7 @@ index 4f1b90c..3e60fd4 100644
    }
    Surface surface;
    surface.bytes = gfx::SkPixmapToWritableSpan(pixmap);
-@@ -605,7 +710,31 @@ void ApplyToPixmap(const SkPixmap& pixmap) {
+@@ -605,7 +708,31 @@ void ApplyToPixmap(const SkPixmap& pixmap) {
    surface.row_stride = pixmap.rowBytes();
    surface.pixel_stride = static_cast<size_t>(pixmap.info().bytesPerPixel());
    surface.channels = *channels;
@@ -400,7 +399,7 @@ index 4f1b90c..3e60fd4 100644
  }
  
  scoped_refptr<StaticBitmapImage> ApplyToSnapshot(
-@@ -655,31 +784,45 @@ bool ReadPixelsForPage(const cc::PaintImage& image,
+@@ -655,31 +782,43 @@ bool ReadPixelsForPage(const cc::PaintImage& image,
      return plain();
    }
    const SkImageInfo source_info = image.GetSkImageInfo();
@@ -445,9 +444,7 @@ index 4f1b90c..3e60fd4 100644
 +    ApplyToRegion(*surface, Region{.left = covered.x() - padded.x(),
 +                                   .top = covered.y() - padded.y(),
 +                                   .right = covered.right() - padded.x(),
-+                                   .bottom = covered.bottom() - padded.y(),
-+                                   .canvas_x = padded.x(),
-+                                   .canvas_y = padded.y()});
++                                   .bottom = covered.bottom() - padded.y()});
 +  }
 +  SkPixmap from;
 +  SkPixmap to;
@@ -463,7 +460,7 @@ index 4f1b90c..3e60fd4 100644
  
  }  // namespace apostate_readback_noise
 diff --git a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h
-index 57f924c..207e902 100644
+index 57f924c..b2992bd 100644
 --- a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h
 +++ b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h
 @@ -24,16 +24,18 @@ class StaticBitmapImage;
@@ -476,16 +473,17 @@ index 57f924c..207e902 100644
 +// anti-aliased pixels a few steps away from the bytes the renderer produced.
  //
  // The policy is content-keyed, not call-keyed: the perturbation of a pixel is
- // a function of the profile seed, the clean pixel, its clean 3x3 neighbourhood
+-// a function of the profile seed, the clean pixel, its clean 3x3 neighbourhood
 -// and its position in the returned rectangle, and of nothing else. Two reads
 -// of one surface therefore agree, a 1:1 canvas-to-canvas copy reads back
 -// identically, and every output route returns the same answer for the same
 -// pixels. A pixel whose 3x3 neighbourhood is one value is left alone, so a
 -// solid fill is byte-exact at every route.
-+// and its position on the canvas, and of nothing else. Two reads of one
++// a function of the profile seed, the clean pixel and its clean 3x3
++// neighbourhood, and of nothing else -- not of where it is. Two reads of one
 +// surface therefore agree, a read of part of a 2D canvas agrees with a read of
-+// all of it, and every output route returns the same answer for the same
-+// pixels. Only a pixel that is a blend of its neighbours moves -- a colour no
++// all of it, one shape drawn at two places reads back the same, and every
++// output route returns the same answer for the same pixels. Only a pixel that is a blend of its neighbours moves -- a colour no
 +// neighbour has, inside the range they span -- and it stays a blend of them;
 +// its colour and its alpha each move by up to two steps. A solid fill, a hard
 +// edge, a straight half-pixel edge and a lone dot read back byte-exact.
