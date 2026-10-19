@@ -1,0 +1,125 @@
+Subject: [PATCH] audio: oscillator tables and compressor gain per profile
+
+With --fingerprint-noise, each entry of an oscillator's band-limited wave
+tables moves by at most two units in the last place, in a pattern fixed
+per profile, and the compressor's makeup gain by one to three units.
+Profiles on one computer otherwise render identical OfflineAudioContext
+output and AnalyserNode data. The change is made in the signal path, so
+the rendered buffer and the analyser read from one graph agree, the same
+graph renders the same samples every time, and an AudioBuffer a page
+writes reads back exactly as written. Zeros and wave peaks stay exact.
+
+diff --git a/third_party/blink/renderer/modules/webaudio/periodic_wave.cc b/third_party/blink/renderer/modules/webaudio/periodic_wave.cc
+index fee5dd8..894625c 100644
+--- a/third_party/blink/renderer/modules/webaudio/periodic_wave.cc
++++ b/third_party/blink/renderer/modules/webaudio/periodic_wave.cc
+@@ -30,10 +30,13 @@
+ 
+ #include <algorithm>
+ #include <array>
++#include <cmath>
++#include <cstdlib>
+ #include <memory>
+ 
+ #include "base/bit_cast.h"
+ #include "base/apostate/profile.h"
++#include "base/apostate/profile_noise.h"
+ #include "base/compiler_specific.h"
+ #include "base/containers/span.h"
+ #include "build/build_config.h"
+@@ -68,6 +71,36 @@ constexpr unsigned kMaxPeriodicWaveSize = 16384;
+ 
+ constexpr float kCentsPerRange = 1200 / kNumberOfOctaveBands;
+ 
++// AliasMode: with --fingerprint-noise, each entry of a band-limited table
++// moves by at most two units in the last place, in a pattern fixed per
++// profile. That is the size of the rounding differences between FFT
++// implementations. Every oscillator reads these tables, so an oscillator graph
++// and everything after it -- OfflineAudioContext output and AnalyserNode data
++// alike -- renders differently per profile and the same on every run. Zeros
++// and the normalised peaks stay exact, and an AudioBuffer a page fills is
++// never touched.
++void PerturbBandLimitedTable(base::span<float> table, unsigned range_index) {
++  static const uint64_t seed =
++      base::apostate::ProfileNoiseBits("audio/periodic-wave/v1");
++  if (!seed) {
++    return;
++  }
++  for (size_t i = 0; i < table.size(); ++i) {
++    float value = table[i];
++    if (value == 0.0f || std::fabs(value) >= 1.0f) {
++      continue;
++    }
++    const uint64_t draw = base::apostate::MixProfileNoise(
++        seed, (static_cast<uint64_t>(range_index) << 32) | i);
++    const int steps = static_cast<int>(draw % 5u) - 2;
++    const float toward = steps > 0 ? 2.0f : -2.0f;
++    for (int step = 0; step < std::abs(steps); ++step) {
++      value = std::nextafter(value, toward);
++    }
++    table[i] = value;
++  }
++}
++
+ }  // namespace
+ 
+ PeriodicWave* PeriodicWave::Create(BaseAudioContext& context,
+@@ -506,6 +539,7 @@ bool PeriodicWaveImpl::CreateBandLimitedTables(
+ 
+     // Apply normalization scale.
+     vector_math::Vsmul(data_span, normalization_scale, data_span, fft_size);
++    PerturbBandLimitedTable(data_span, range_index);
+   }
+   return true;
+ }
+diff --git a/third_party/blink/renderer/platform/audio/dynamics_compressor.cc b/third_party/blink/renderer/platform/audio/dynamics_compressor.cc
+index 68e4711..a11acb1 100644
+--- a/third_party/blink/renderer/platform/audio/dynamics_compressor.cc
++++ b/third_party/blink/renderer/platform/audio/dynamics_compressor.cc
+@@ -30,8 +30,10 @@
+ 
+ #include <algorithm>
+ #include <cmath>
++#include <limits>
+ 
+ #include "base/apostate/profile.h"
++#include "base/apostate/profile_noise.h"
+ #include "base/compiler_specific.h"
+ #include "base/containers/span.h"
+ #include "base/cpu.h"
+@@ -49,6 +51,25 @@ namespace blink {
+ 
+ namespace {
+ 
++// AliasMode: with --fingerprint-noise, the makeup gain moves by one to three
++// units in the last place, fixed per profile -- the size of the difference
++// between two C runtimes' powf. A compressor fed a buffer the page wrote then
++// renders differently per profile, as an oscillator graph already does through
++// its wave tables. Exactly 1 when the policy is off.
++float ProfileMakeupGainScale() {
++  static const float scale = [] {
++    const uint64_t bits =
++        base::apostate::ProfileNoiseBits("audio/compressor-makeup/v1");
++    if (!bits) {
++      return 1.0f;
++    }
++    const int units = 1 + static_cast<int>(bits % 3u);
++    return 1.0f + ((bits >> 63) ? units : -units) *
++                      std::numeric_limits<float>::epsilon();
++  }();
++  return scale;
++}
++
+ // Metering hits peaks instantly, but releases this fast (in seconds).
+ constexpr float kMeteringReleaseTimeConstant = 0.325f;
+ 
+@@ -169,7 +190,8 @@ void DynamicsCompressor::Process(const AudioBus* source_bus,
+   const float k = UpdateStaticCurveParameters(db_threshold, db_knee, ratio);
+ 
+   // Makeup gain with empirical/perceptual tuning.
+-  const float linear_post_gain = fdlibm::powf(1 / Saturate(1, k), 0.6f);
++  const float linear_post_gain =
++      fdlibm::powf(1 / Saturate(1, k), 0.6f) * ProfileMakeupGainScale();
+ 
+   // Attack parameters.
+   const float attack_frames = std::max(0.001f, attack_time) * sample_rate;

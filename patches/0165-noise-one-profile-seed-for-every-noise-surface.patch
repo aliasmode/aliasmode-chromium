@@ -1,0 +1,130 @@
+Subject: [PATCH] noise: one profile seed for every noise surface
+
+base::apostate::ProfileNoiseBits(domain) gives 64 bits derived from the
+profile id and a domain name, the same in every process and on every
+launch of one profile. It is zero unless --fingerprint-noise is on and
+the profile has an id, so host mode and launches without the switch stay
+stock. The font, audio and canvas patches that follow draw from it.
+
+diff --git a/base/BUILD.gn b/base/BUILD.gn
+index 9196368..2a8ef85 100644
+--- a/base/BUILD.gn
++++ b/base/BUILD.gn
+@@ -1717,6 +1717,8 @@ component("base") {
+     "apostate/media_devices.h",
+     "apostate/profile.cc",
+     "apostate/profile.h",
++    "apostate/profile_noise.cc",
++    "apostate/profile_noise.h",
+     "system/sys_info.cc",
+     "system/sys_info.h",
+     "system/sys_info_internal.h",
+diff --git a/base/apostate/profile_noise.cc b/base/apostate/profile_noise.cc
+new file mode 100644
+index 0000000..0c5ff9a
+--- /dev/null
++++ b/base/apostate/profile_noise.cc
+@@ -0,0 +1,67 @@
++// Copyright 2026 The AliasMode Authors
++// Use of this source code is governed by a GPL-3.0 license that can be
++// found in the LICENSE file.
++
++#include "base/apostate/profile_noise.h"
++
++#include <string>
++
++#include "base/apostate/profile.h"
++#include "base/base_switches.h"
++#include "base/command_line.h"
++#include "base/hash/hash.h"
++#include "base/no_destructor.h"
++#include "base/strings/strcat.h"
++
++namespace base::apostate {
++
++namespace {
++
++std::string ResolveIdentity() {
++  if (!CommandLine::InitializedForCurrentProcess() ||
++      !CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kFingerprintNoise)) {
++    return std::string();
++  }
++  // Host mode and an authored profile with no id have nothing profile-bound
++  // to key on, and a host-derived key would leak a host fact, so stay off.
++  const Profile* profile = Profile::Get();
++  return profile ? profile->source_id() : std::string();
++}
++
++// The profile identity, or empty when the policy is off. The switch and the
++// profile are fixed before the first page loads, so this never changes.
++const std::string& Identity() {
++  static const NoDestructor<std::string> identity(ResolveIdentity());
++  return *identity;
++}
++
++}  // namespace
++
++bool ProfileNoiseEnabled() {
++  return !Identity().empty();
++}
++
++uint64_t ProfileNoiseBits(std::string_view domain) {
++  const std::string& identity = Identity();
++  if (identity.empty()) {
++    return 0;
++  }
++  // PersistentHash is stable across builds and processes; the NUL keeps the
++  // domain from running into the identity.
++  static constexpr std::string_view kNul("\0", 1);
++  const std::string material =
++      StrCat({"aliasmode/", domain, kNul, identity});
++  return (static_cast<uint64_t>(PersistentHash(material)) << 32) |
++         PersistentHash(StrCat({material, "/2"}));
++}
++
++uint64_t MixProfileNoise(uint64_t bits, uint64_t value) {
++  // splitmix64's finaliser over the pair.
++  uint64_t z = bits ^ (value * 0x9e3779b97f4a7c15ull + 0x632be59bd9b4e019ull);
++  z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
++  z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
++  return z ^ (z >> 31);
++}
++
++}  // namespace base::apostate
+diff --git a/base/apostate/profile_noise.h b/base/apostate/profile_noise.h
+new file mode 100644
+index 0000000..c65ce30
+--- /dev/null
++++ b/base/apostate/profile_noise.h
+@@ -0,0 +1,30 @@
++// Copyright 2026 The AliasMode Authors
++// Use of this source code is governed by a GPL-3.0 license that can be
++// found in the LICENSE file.
++
++#ifndef BASE_APOSTATE_PROFILE_NOISE_H_
++#define BASE_APOSTATE_PROFILE_NOISE_H_
++
++#include <cstdint>
++#include <string_view>
++
++#include "base/base_export.h"
++
++namespace base::apostate {
++
++// Whether --fingerprint-noise is on in this process and the profile carries an
++// identity to derive values from. Constant for the process.
++BASE_EXPORT bool ProfileNoiseEnabled();
++
++// 64 bits derived from the profile identity and `domain`, the same in every
++// process and on every launch of one profile. Zero when ProfileNoiseEnabled()
++// is false.
++BASE_EXPORT uint64_t ProfileNoiseBits(std::string_view domain);
++
++// Mixes `value` into `bits`. Deterministic and cheap, for per-item draws from
++// one ProfileNoiseBits() value.
++BASE_EXPORT uint64_t MixProfileNoise(uint64_t bits, uint64_t value);
++
++}  // namespace base::apostate
++
++#endif  // BASE_APOSTATE_PROFILE_NOISE_H_

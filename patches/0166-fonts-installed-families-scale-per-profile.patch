@@ -1,0 +1,77 @@
+Subject: [PATCH] fonts: installed families scale per profile
+
+With --fingerprint-noise, each installed font family is drawn and
+measured 1 to 4 parts per thousand larger or smaller, by a factor fixed
+per profile and family. Profiles on one computer otherwise measure text
+identically: measureText, DOMRect, Range rects, offsetWidth, emoji boxes
+and SVG getBBox all came out equal across profiles. The factor is
+applied to the font size where the platform font is created, so shaping
+advances, ink bounds, line metrics, layout, SVG and the glyphs a canvas
+draws all change together and agree with each other, in pages and in
+workers. Combining marks stay attached because the whole font scales.
+Web fonts are not changed.
+
+diff --git a/third_party/blink/renderer/platform/fonts/win/font_cache_skia_win.cc b/third_party/blink/renderer/platform/fonts/win/font_cache_skia_win.cc
+index e00bd96..18f4044 100644
+--- a/third_party/blink/renderer/platform/fonts/win/font_cache_skia_win.cc
++++ b/third_party/blink/renderer/platform/fonts/win/font_cache_skia_win.cc
+@@ -37,9 +37,12 @@
+ #include <string>
+ #include <utility>
+ 
++#include "base/apostate/profile_noise.h"
+ #include "base/debug/alias.h"
+ #include "base/feature_list.h"
+ #include "base/metrics/histogram_functions.h"
++#include "base/strings/strcat.h"
++#include "base/strings/string_util.h"
+ #include "base/trace_event/trace_event.h"
+ #include "skia/ext/font_utils.h"
+ #include "third_party/blink/public/platform/web_font_prewarmer.h"
+@@ -59,6 +62,8 @@
+ #include "third_party/blink/renderer/platform/wtf/wtf.h"
+ #include "third_party/skia/include/core/SkFontMgr.h"
+ #include "third_party/skia/include/core/SkStream.h"
++#include "third_party/skia/include/core/SkString.h"
++#include "third_party/skia/include/core/SkTypeface.h"
+ #include "third_party/skia/include/ports/SkTypeface_win.h"
+ 
+ namespace blink {
+@@ -73,6 +78,26 @@ int32_t FontCache::status_font_height_ = 0;
+ 
+ namespace {
+ 
++// AliasMode: with --fingerprint-noise, each installed family is drawn and
++// measured 1 to 4 parts per thousand larger or smaller, by a factor fixed per
++// profile and family. The size is the one input every text surface derives
++// from -- shaping advances, ink bounds, line metrics, layout boxes, SVG text
++// and the glyphs a canvas rasterises -- so all of them stay consistent with
++// each other while two profiles on one host stop agreeing. Combining marks
++// keep their anchors because the whole font scales. Web fonts are left alone.
++float ProfileFontSizeScale(const SkTypeface& typeface) {
++  if (!base::apostate::ProfileNoiseEnabled()) {
++    return 1.0f;
++  }
++  SkString family;
++  typeface.getFamilyName(&family);
++  const uint64_t bits = base::apostate::ProfileNoiseBits(base::StrCat(
++      {"font-size/v1/",
++       base::ToLowerASCII(std::string_view(family.c_str(), family.size()))}));
++  const float magnitude = 0.001f + static_cast<float>(bits % 3001u) * 1e-6f;
++  return (bits >> 63) ? 1.0f + magnitude : 1.0f - magnitude;
++}
++
+ int32_t EnsureMinimumFontHeightIfNeeded(int32_t font_height) {
+   // Adjustment for codepage 936 to make the fonts more legible in Simplified
+   // Chinese.  Please refer to LayoutThemeFontProviderWin.cpp for more
+@@ -490,8 +515,9 @@ const FontPlatformData* FontCache::CreateFontPlatformData(
+        !typeface->isItalic()) ||
+       font_description.IsSyntheticItalic();
+ 
++  const float profile_font_size = font_size * ProfileFontSizeScale(*typeface);
+   FontPlatformData* result = MakeGarbageCollected<FontPlatformData>(
+-      typeface, name.data(), font_size,
++      typeface, name.data(), profile_font_size,
+       synthetic_bold_requested && font_description.SyntheticBoldAllowed(),
+       synthetic_italic_requested && font_description.SyntheticItalicAllowed(),
+       font_description.TextRendering(), ResolvedFontFeatures(),
