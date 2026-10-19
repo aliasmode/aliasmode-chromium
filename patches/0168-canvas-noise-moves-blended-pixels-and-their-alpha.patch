@@ -6,21 +6,27 @@ was then the same for every profile, and a canvas of solid rectangles
 read back with changed edge pixels, which shows the noise.
 
 Now only a pixel that is a blend of its neighbours moves: a colour none
-of its eight neighbours has, inside the range they span. That is what
-anti-aliasing leaves on curved and sloped edges and in text. Its colour
-and its alpha each move by up to two steps and stay inside that range,
-so the pixel is still a plausible blend. Solid fills, hard edges,
-straight half-pixel edges and lone dots read back exactly as drawn.
+of its eight neighbours has, inside the range they span. For 2D canvas
+output the whole 3x3 neighbourhood must also lie on one line between two
+colours in premultiplied space, which is what anti-aliasing an edge
+between two colours leaves, in text and on curves; a grid of random
+colours drawn pixel by pixel, as CreepJS draws to test getImageData,
+never qualifies and reads back exactly. The pixel's colour and alpha
+each move by up to two steps and stay inside its neighbours' range.
+Solid fills, hard edges, straight half-pixel edges and lone dots read
+back exactly as drawn. WebGL readPixels and WebGL canvas exports keep
+the looser rule, as shader output is often noise with no two-colour
+edges.
 
-The step no longer depends on the pixel's position, only on the pixel
-and its neighbours, so one shape drawn at two places reads back the
-same. getImageData reads a one-pixel border inside the canvas to decide
-the pixels at its edges, so a read of part of a canvas agrees with a
-read of all of it and with toDataURL and toBlob. A read that reaches
-past the canvas no longer fills the outside with unset memory.
+The step depends only on the pixel and its neighbours, not on where it
+is, so one shape drawn at two places reads back the same. getImageData
+reads a one-pixel border inside the canvas to decide the pixels at its
+edges, so a read of part of a canvas agrees with a read of all of it and
+with toDataURL and toBlob. A read that reaches past the canvas no longer
+fills the outside with unset memory.
 
 diff --git a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc
-index 4f1b90c..93c6430 100644
+index 4f1b90c..8065129 100644
 --- a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc
 +++ b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc
 @@ -6,6 +6,7 @@
@@ -79,7 +85,7 @@ index 4f1b90c..93c6430 100644
  // same answer; this is the cheap path and the explicit guarantee.
  bool WholeSurfaceIsOneValue(const Surface& surface) {
    const size_t row_bytes = surface.pixel_stride *
-@@ -400,13 +412,36 @@ base::span<uint8_t> PixelAt(const Surface& surface, int32_t x, int32_t y) {
+@@ -400,11 +412,120 @@ base::span<uint8_t> PixelAt(const Surface& surface, int32_t x, int32_t y) {
        surface.pixel_stride);
  }
  
@@ -99,9 +105,9 @@ index 4f1b90c..93c6430 100644
 +        CanonicalValues(PixelAt(surface, x, y), surface.channels);
 +    out.values[static_cast<wtf_size_t>(x)] = values;
 +    out.keys[static_cast<wtf_size_t>(x)] = CanonicalPixelKey(values);
-   }
- }
- 
++  }
++}
++
 +// The part of a surface to perturb. Neighbourhoods are read from the whole
 +// surface, so a caller that hands in the requested rectangle plus a one-pixel
 +// border inside the canvas gets the same answer for every pixel as a read of
@@ -116,10 +122,94 @@ index 4f1b90c..93c6430 100644
 +// Stands in for a neighbour outside the canvas in the hash input.
 +constexpr uint64_t kOutsideKey = 0x9e3779b97f4a7c15ull;
 +
++// A pixel's premultiplied colour on a 0 to 255 scale per channel, the space
++// in which anti-aliasing blends two colours along a straight line.
++using BlendPoint = std::array<double, 4>;
++
++BlendPoint PremultipliedUnits(const CanonicalPixel& value,
++                              const Channels& channels) {
++  const uint8_t alpha_index = channels.logical[3];
++  const double alpha =
++      alpha_index == Channels::kAbsent
++          ? 1.0
++          : static_cast<double>(value[3]) /
++                static_cast<double>(ChannelMax(channels, alpha_index));
++  BlendPoint point = {0, 0, 0, alpha * 255.0};
++  for (size_t c = 0; c < 3; ++c) {
++    const uint8_t storage_index = channels.logical[c];
++    if (storage_index == Channels::kAbsent) {
++      continue;
++    }
++    point[c] = static_cast<double>(value[c]) /
++               static_cast<double>(ChannelMax(channels, storage_index)) *
++               alpha * 255.0;
++  }
++  return point;
++}
++
++// True when the pixel and every neighbour lie, within rounding, on one line
++// between two colours, with the pixel strictly between its ends. That is what
++// anti-aliasing an edge between two colours leaves, in text and on curves. A
++// pattern a page draws pixel by pixel in colours of its own, such as a grid of
++// random colours, almost never lines up like that, so it reads back exactly.
++bool IsTwoColourBlend(const BlendPoint& centre,
++                      base::span<const BlendPoint> neighbours) {
++  constexpr double kTolerance = 1.5;
++  std::array<BlendPoint, 9> points;
++  size_t count = 0;
++  points[count++] = centre;
++  for (const BlendPoint& point : neighbours) {
++    points[count++] = point;
++  }
++  const auto distance2 = [](const BlendPoint& a, const BlendPoint& b) {
++    double sum = 0;
++    for (size_t c = 0; c < 4; ++c) {
++      sum += (a[c] - b[c]) * (a[c] - b[c]);
++    }
++    return sum;
++  };
++  size_t from = 0;
++  size_t to = 0;
++  double longest = 0;
++  for (size_t i = 0; i < count; ++i) {
++    for (size_t j = i + 1; j < count; ++j) {
++      const double d2 = distance2(points[i], points[j]);
++      if (d2 > longest) {
++        longest = d2;
++        from = i;
++        to = j;
++      }
++    }
+   }
++  if (longest < 9.0) {
++    return false;
++  }
++  const BlendPoint& start = points[from];
++  BlendPoint direction;
++  for (size_t c = 0; c < 4; ++c) {
++    direction[c] = points[to][c] - start[c];
++  }
++  double centre_t = 0;
++  for (size_t i = 0; i < count; ++i) {
++    double dot = 0;
++    for (size_t c = 0; c < 4; ++c) {
++      dot += (points[i][c] - start[c]) * direction[c];
++    }
++    const double t = dot / longest;
++    for (size_t c = 0; c < 4; ++c) {
++      if (std::abs(points[i][c] - (start[c] + t * direction[c])) > kTolerance) {
++        return false;
++      }
++    }
++    if (i == 0) {
++      centre_t = t;
++    }
++  }
++  return centre_t > 0.02 && centre_t < 0.98;
+ }
+ 
  std::optional<Channels> ChannelsForColorType(SkColorType color_type,
-                                              SkAlphaType alpha_type) {
-   constexpr uint8_t kNone = Channels::kAbsent;
-@@ -483,23 +518,18 @@ std::optional<Channels> ChannelsForColorType(SkColorType color_type,
+@@ -483,23 +604,20 @@ std::optional<Channels> ChannelsForColorType(SkColorType color_type,
    }
  }
  
@@ -134,7 +224,9 @@ index 4f1b90c..93c6430 100644
 -}
 -
 -void Apply(const Surface& surface) {
-+void ApplyToRegion(const Surface& surface, const Region& region) {
++void ApplyToRegion(const Surface& surface,
++                   const Region& region,
++                   Content content) {
    if (!Enabled() || surface.width <= 0 || surface.height <= 0 ||
        surface.pixel_stride == 0 ||
        surface.row_stride <
@@ -149,7 +241,7 @@ index 4f1b90c..93c6430 100644
    const size_t extent =
        surface.row_stride * static_cast<size_t>(surface.height - 1) +
        surface.pixel_stride * static_cast<size_t>(surface.width);
-@@ -510,93 +540,166 @@ void Apply(const Surface& surface) {
+@@ -510,93 +628,181 @@ void Apply(const Surface& surface) {
    if (channels.logical[0] == Channels::kAbsent &&
        channels.logical[1] == Channels::kAbsent &&
        channels.logical[2] == Channels::kAbsent) {
@@ -175,16 +267,16 @@ index 4f1b90c..93c6430 100644
 +  for (RowDigest& row : rows) {
 +    row.keys.resize(width);
 +    row.values.resize(width);
-+  }
+   }
+-  DigestRow(surface, 0, base::span<uint64_t>(rows[0]));
+-  if (surface.height > 1) {
+-    DigestRow(surface, 1, base::span<uint64_t>(rows[1]));
 +  const auto row_at = [&rows](int32_t y) -> RowDigest& {
 +    return rows[static_cast<size_t>(y) % 3u];
 +  };
 +  if (region.top > 0) {
 +    DigestRow(surface, region.top - 1, row_at(region.top - 1));
-   }
--  DigestRow(surface, 0, base::span<uint64_t>(rows[0]));
--  if (surface.height > 1) {
--    DigestRow(surface, 1, base::span<uint64_t>(rows[1]));
++  }
 +  DigestRow(surface, region.top, row_at(region.top));
 +  if (region.top + 1 < surface.height) {
 +    DigestRow(surface, region.top + 1, row_at(region.top + 1));
@@ -220,6 +312,8 @@ index 4f1b90c..93c6430 100644
 +      // span. A neighbour off the canvas does not exist; one off the surface
 +      // but on the canvas never happens, because callers hand in a border.
 +      std::array<uint64_t, 8> neighbour_keys;
++      std::array<BlendPoint, 8> neighbour_points;
++      size_t present = 0;
 +      CanonicalPixel low;
 +      CanonicalPixel high;
 +      low.fill(std::numeric_limits<int64_t>::max());
@@ -242,7 +336,7 @@ index 4f1b90c..93c6430 100644
 +              ny >= surface.height) {
 +            neighbour_keys[count++] = kOutsideKey;
 +            continue;
-+          }
+           }
 +          const RowDigest& row = row_at(ny);
 +          const uint64_t key = row.keys[static_cast<wtf_size_t>(nx)];
 +          neighbour_keys[count++] = key;
@@ -252,13 +346,12 @@ index 4f1b90c..93c6430 100644
 +          for (size_t c = 0; c < 4; ++c) {
 +            low[c] = std::min(low[c], other[c]);
 +            high[c] = std::max(high[c], other[c]);
-           }
-         }
-       }
--      // A pixel that sits in a patch of one colour is left alone. Flat regions
--      // are what a page can predict; edges are what a renderer's rasteriser
--      // signs its name on.
--      if (uniform) {
++          }
++          if (content == Content::k2D && normalised) {
++            neighbour_points[present++] = PremultipliedUnits(other, channels);
++          }
++        }
++      }
 +
 +      // Only a pixel that is a blend of its neighbours moves: a colour no
 +      // neighbour has, inside the range they span on every channel. That is
@@ -275,9 +368,23 @@ index 4f1b90c..93c6430 100644
 +        if (channels.logical[c] != Channels::kAbsent &&
 +            (value[c] < low[c] || value[c] > high[c])) {
 +          blend = false;
-+        }
-+      }
+         }
+       }
+-      // A pixel that sits in a patch of one colour is left alone. Flat regions
+-      // are what a page can predict; edges are what a renderer's rasteriser
+-      // signs its name on.
+-      if (uniform) {
 +      if (!blend) {
++        continue;
++      }
++      // 2D canvas output asks more: the whole neighbourhood is a blend of two
++      // colours. Pages test 2D readback with grids of random colours drawn
++      // pixel by pixel; WebGL output, often noise from a shader, does not get
++      // that test and keeps the looser rule.
++      if (content == Content::k2D && normalised &&
++          !IsTwoColourBlend(PremultipliedUnits(value, channels),
++                            base::span<const BlendPoint>(neighbour_points)
++                                .first(present))) {
          continue;
        }
  
@@ -366,7 +473,7 @@ index 4f1b90c..93c6430 100644
    }
    Surface surface;
    surface.bytes = gfx::SkPixmapToWritableSpan(pixmap);
-@@ -605,7 +708,31 @@ void ApplyToPixmap(const SkPixmap& pixmap) {
+@@ -605,11 +811,43 @@ void ApplyToPixmap(const SkPixmap& pixmap) {
    surface.row_stride = pixmap.rowBytes();
    surface.pixel_stride = static_cast<size_t>(pixmap.info().bytesPerPixel());
    surface.channels = *channels;
@@ -374,19 +481,26 @@ index 4f1b90c..93c6430 100644
 +  return surface;
 +}
 +
++void ApplyToPixmapAs(const SkPixmap& pixmap, Content content) {
++  if (std::optional<Surface> surface = SurfaceForPixmap(pixmap)) {
++    ApplyToRegion(*surface,
++                  Region{.right = surface->width, .bottom = surface->height},
++                  content);
++  }
++}
++
 +}  // namespace
 +
 +void Apply(const Surface& surface) {
-+  ApplyToRegion(surface, Region{.right = surface.width,
-+                                .bottom = surface.height});
++  // WebGL readPixels is the one caller.
++  ApplyToRegion(surface,
++                Region{.right = surface.width, .bottom = surface.height},
++                Content::kWebGL);
 +}
 +
 +void ApplyToPixmap(const SkPixmap& pixmap) {
-+  if (!Enabled()) {
-+    return;
-+  }
-+  if (std::optional<Surface> surface = SurfaceForPixmap(pixmap)) {
-+    Apply(*surface);
++  if (Enabled()) {
++    ApplyToPixmapAs(pixmap, Content::k2D);
 +  }
 +}
 +
@@ -399,7 +513,22 @@ index 4f1b90c..93c6430 100644
  }
  
  scoped_refptr<StaticBitmapImage> ApplyToSnapshot(
-@@ -655,31 +782,43 @@ bool ReadPixelsForPage(const cc::PaintImage& image,
+-    scoped_refptr<StaticBitmapImage> snapshot) {
++    scoped_refptr<StaticBitmapImage> snapshot,
++    Content content) {
+   if (!Enabled() || !snapshot) {
+     return snapshot;
+   }
+@@ -626,7 +864,7 @@ scoped_refptr<StaticBitmapImage> ApplyToSnapshot(
+       !source->readPixels(nullptr, perturbed.pixmap(), 0, 0)) {
+     return snapshot;
+   }
+-  ApplyToPixmap(perturbed.pixmap());
++  ApplyToPixmapAs(perturbed.pixmap(), content);
+   perturbed.setImmutable();
+   sk_sp<SkImage> image = perturbed.asImage();
+   if (!image) {
+@@ -655,31 +893,45 @@ bool ReadPixelsForPage(const cc::PaintImage& image,
      return plain();
    }
    const SkImageInfo source_info = image.GetSkImageInfo();
@@ -441,10 +570,12 @@ index 4f1b90c..93c6430 100644
 -  if (!image.readPixels(held.info(), held.getPixels(), held.rowBytes(), src_x,
 -                        src_y)) {
 +  if (std::optional<Surface> surface = SurfaceForPixmap(held.pixmap())) {
-+    ApplyToRegion(*surface, Region{.left = covered.x() - padded.x(),
-+                                   .top = covered.y() - padded.y(),
-+                                   .right = covered.right() - padded.x(),
-+                                   .bottom = covered.bottom() - padded.y()});
++    ApplyToRegion(*surface,
++                  Region{.left = covered.x() - padded.x(),
++                         .top = covered.y() - padded.y(),
++                         .right = covered.right() - padded.x(),
++                         .bottom = covered.bottom() - padded.y()},
++                  Content::k2D);
 +  }
 +  SkPixmap from;
 +  SkPixmap to;
@@ -460,7 +591,7 @@ index 4f1b90c..93c6430 100644
  
  }  // namespace apostate_readback_noise
 diff --git a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h
-index 57f924c..b2992bd 100644
+index 57f924c..ad1da0b 100644
 --- a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h
 +++ b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h
 @@ -24,16 +24,18 @@ class StaticBitmapImage;
@@ -501,3 +632,70 @@ index 57f924c..b2992bd 100644
  namespace apostate_readback_noise {
  
  // How the channels of one pixel are stored.
+@@ -110,6 +112,12 @@ struct Surface {
+   Channels channels;
+ };
+ 
++// What a readback comes from. 2D canvas output moves only a pixel whose whole
++// neighbourhood is a blend of two colours, which keeps a grid of colours a
++// page draws pixel by pixel exact; WebGL output moves any pixel that is a
++// blend of its neighbours.
++enum class Content : uint8_t { k2D, kWebGL };
++
+ // Whether the opt-in is in force for this renderer. Constant for the process:
+ // the switch and the profile are both fixed before the first page loads.
+ CORE_EXPORT bool Enabled();
+@@ -130,7 +138,8 @@ CORE_EXPORT void ApplyToPixmap(const SkPixmap& pixmap);
+ // snapshot is never written to, so the canvas keeps a clean backing store and
+ // the result is perturbed exactly once.
+ CORE_EXPORT scoped_refptr<StaticBitmapImage> ApplyToSnapshot(
+-    scoped_refptr<StaticBitmapImage> snapshot);
++    scoped_refptr<StaticBitmapImage> snapshot,
++    Content content = Content::k2D);
+ 
+ // `image.readPixels(dst)`, with the policy applied to the pixels the image
+ // holds rather than to the converted result. Returns what readPixels returns.
+diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+index 49a6c2e..6fd8a88 100644
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+@@ -1428,7 +1428,10 @@ String HTMLCanvasElement::ToDataURLInternal(
+     // about to be encoded, on a copy, so the canvas keeps a clean backing
+     // store and this route agrees pixel for pixel with getImageData.
+     image_bitmap =
+-        apostate_readback_noise::ApplyToSnapshot(std::move(image_bitmap));
++        apostate_readback_noise::ApplyToSnapshot(
++            std::move(image_bitmap),
++            IsWebGL() ? apostate_readback_noise::Content::kWebGL
++                      : apostate_readback_noise::Content::k2D);
+     std::unique_ptr<ImageDataBuffer> data_buffer =
+         ImageDataBuffer::Create(image_bitmap);
+     if (!data_buffer)
+@@ -1534,7 +1537,10 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
+   scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(kBackBuffer);
+   if (image_bitmap) {
+     image_bitmap =
+-        apostate_readback_noise::ApplyToSnapshot(std::move(image_bitmap));
++        apostate_readback_noise::ApplyToSnapshot(
++            std::move(image_bitmap),
++            IsWebGL() ? apostate_readback_noise::Content::kWebGL
++                      : apostate_readback_noise::Content::k2D);
+     auto* options = ImageEncodeOptions::Create();
+     options->setType(ImageEncoderUtils::MimeTypeName(encoding_mime_type));
+     async_creator = MakeGarbageCollected<CanvasAsyncBlobCreator>(
+diff --git a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+index 36c1663..254e9a5 100644
+--- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
++++ b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+@@ -576,7 +576,10 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
+     // Apostate: same boundary as HTMLCanvasElement::toBlob -- a perturbed copy
+     // goes to the encoder and the canvas keeps its own pixels.
+     image_bitmap =
+-        apostate_readback_noise::ApplyToSnapshot(std::move(image_bitmap));
++        apostate_readback_noise::ApplyToSnapshot(
++            std::move(image_bitmap),
++            IsWebGL() ? apostate_readback_noise::Content::kWebGL
++                      : apostate_readback_noise::Content::k2D);
+     auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<Blob>>(
+         script_state, exception_state.GetContext());
+     CanvasAsyncBlobCreator::ToBlobFunctionType function_type =

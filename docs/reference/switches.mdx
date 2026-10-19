@@ -238,7 +238,7 @@ Any other value is logged and treated as `block`.
 
 Makes profiles on one host differ where they would otherwise be identical. Every change depends only on the profile, so the same seed gives the same values on every launch, in every tab and in workers.
 
-- **Canvas and WebGL readback.** Anti-aliased pixels, the ones that blend their neighbours, move by up to two steps in colour and alpha and stay a blend of their neighbours. Solid areas, hard edges and lone dots stay as rendered. `getImageData` (whole canvas or part of it), `toDataURL`, `toBlob`, `convertToBlob` and WebGL `readPixels` agree with each other.
+- **Canvas and WebGL readback.** Anti-aliased pixels move by up to two steps in colour and alpha and stay a blend of their neighbours. On a 2D canvas only pixels at an edge between two colours move, so solid areas, hard edges, lone dots and grids of colours drawn pixel by pixel stay as rendered. `getImageData` (whole canvas or part of it), `toDataURL`, `toBlob`, `convertToBlob` and WebGL `readPixels` agree with each other.
 - **Text.** Each installed font family draws and measures 1 to 4 parts per thousand larger or smaller. `measureText`, element and range rects, layout, SVG text and canvas text agree with each other. Web fonts are unchanged.
 - **Audio.** Oscillator wave tables and the compressor's makeup gain move by a few units in the last place, so `OfflineAudioContext` output and `AnalyserNode` data differ per profile. An `AudioBuffer` a page writes reads back unchanged.
 
