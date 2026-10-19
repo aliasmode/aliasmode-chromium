@@ -5,6 +5,15 @@ description: "What changed in each Apostate release, newest first."
 
 Each release publishes browser archives for Linux x64, Linux arm64, macOS arm64 and Windows x64 on [GitHub Releases](https://github.com/heretic-tech/apostate/releases). 0.5.1 is built on Chromium 155.0.8059.31. Releases up to 0.4.4 are built on Chromium 152.0.7977.83. The Python package (`apostate` on PyPI) and the Node package (`@heretic-tech/apostate` on npm) are released with the same version number when their code changes.
 
+## AliasMode Chromium 155.0.8059.85 build 2
+
+Released 19 October 2026 as [`v155.0.8059.85-aliasmode.2`](https://github.com/aliasmode/aliasmode-chromium/releases/tag/v155.0.8059.85-aliasmode.2). Windows x64 archive only. Profiles on one computer no longer share the values below. Each value is fixed per seed, so a profile keeps it on every launch.
+
+- **Text.** With [`--fingerprint-noise`](/reference/switches#fingerprint-noise), each installed font family draws and measures 1 to 4 parts per thousand larger or smaller. `measureText`, element and range rects, layout, SVG text and canvas text change together and agree with each other, in pages and in workers.
+- **Audio.** With `--fingerprint-noise`, oscillator wave tables and the compressor's makeup gain move by a few units in the last place. `OfflineAudioContext` output and `AnalyserNode` data differ per profile. An `AudioBuffer` a page writes reads back unchanged.
+- **Canvas.** The readback noise now moves colour and alpha of anti-aliased pixels, by up to two steps, so alpha-only and rounded hashes differ per profile too. On a 2D canvas only pixels at an edge between two colours move: solid fills, hard edges and grids of colours drawn pixel by pixel read back exactly, and CreepJS reports no canvas lie. A read of part of a canvas agrees with a read of all of it.
+- **Fonts and voices.** Four groups of rarely used Windows font families (handwriting, supplemental scripts, historic scripts, CJK Extension B) are optional packs that 70 to 75% of seeds show. The families pages rely on and those that mark a Windows version are always shown. Windows voice lists add one or two OneCore speech packs for about 60% of seeds. Windows seeds therefore present new font and voice lists; every other value of a seed is unchanged.
+
 ## AliasMode Chromium 155.0.8059.85 build 1
 
 Released 18 October 2026 as [`v155.0.8059.85-aliasmode.1`](https://github.com/aliasmode/aliasmode-chromium/releases/tag/v155.0.8059.85-aliasmode.1). Windows x64 archive only.

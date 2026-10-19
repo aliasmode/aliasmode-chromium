@@ -21,7 +21,7 @@ you create a Chrome profile.
 
 | Platform | Build |
 | --- | --- |
-| Windows x64 | [`v155.0.8059.85-aliasmode.1`](https://github.com/aliasmode/aliasmode-chromium/releases/tag/v155.0.8059.85-aliasmode.1), built by AliasMode from this repository |
+| Windows x64 | [`v155.0.8059.85-aliasmode.2`](https://github.com/aliasmode/aliasmode-chromium/releases/tag/v155.0.8059.85-aliasmode.2), built by AliasMode from this repository |
 | macOS arm64 | Not built by AliasMode yet |
 | Linux | Not built by AliasMode yet |
 
