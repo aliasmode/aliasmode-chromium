@@ -79,7 +79,7 @@ The browser's C++ serves every row, so every API and header that reads the value
 | `navigator.keyboard.getLayoutMap()` | none | The US layout of the persona's platform. A profile you write can carry another in `keyboard.layout_map`. |
 | `navigator.connection` (`effectiveType`, `rtt`, `downlink`, `saveData`), the `ECT`, `RTT`, `Downlink` and `Save-Data` headers | `network` | One of three 4G connections. |
 | `navigator.getBattery()` | `battery` | The battery table, one list per machine. Desktops report no battery, as desktop Chrome does. |
-| `chrome.runtime` on web pages | `extensions` | Drawn by seed. A quarter of seeds show it, as on a Chrome with an extension that talks to web pages. |
+| `chrome.runtime` on web pages | `extensions` | Not drawn. Every profile says no extension talks to web pages, so only extensions installed in the profile show it, as in Chrome. |
 | `navigator.share()`, `navigator.canShare()` | none | Present for Windows and macOS personas. |
 | `new URL("c:/foo").protocol` and other Windows path forms | none | A Windows persona parses them as Windows Chrome does (`file:`). |
 | Timezone, `Intl` defaults, `navigator.language`, `navigator.languages`, `Accept-Language` | `locale` | Not the seed. The packages take them from the proxy's location, or from your `locale` and `timezone` options. See [Locale and timezone](/guides/locale-and-timezone). |

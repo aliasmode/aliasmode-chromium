@@ -75,8 +75,9 @@ WINDOWS_11_FONTS_REPO = frozenset({
     "Yu Gothic UI Semilight",
 })
 # Windows system families the repo does not ship. A Windows pack may allow
-# them, since real machines have them, but may not require them.
-WINDOWS_FAMILIES_NOT_IN_REPO = frozenset({"Marlett"})
+# them, since real machines have them, but may not require them. Windows also
+# answers "Franklin Gothic" with the Franklin Gothic Medium face.
+WINDOWS_FAMILIES_NOT_IN_REPO = frozenset({"Franklin Gothic", "Marlett"})
 
 
 def _mirror_catalogue(destination: Path) -> Path:
@@ -226,11 +227,13 @@ class CatalogueIntegrityTests(unittest.TestCase):
         """Each platform shows its allowlist only, and the host can install all of it.
 
         An optional pack is a whole bundle, so what it requires the host to
-        install and what it lets a page see are the same list. On Windows
-        everything comes from the repo `apostate fonts install windows`
+        install and what it lets a page see are the same list. The Windows
+        core pack comes from the repo `apostate fonts install windows`
         clones, except Marlett, which no download provides; a host that lacks
-        it simply does not show it. macOS shows the reference Mac's families
-        and nothing more.
+        it simply does not show it. Optional Windows packs are what real
+        machines add, Microsoft Office and Windows language features, which
+        the repo does not ship: a host shows them only where it has them.
+        macOS shows the reference Mac's families and nothing more.
         """
         for option_set in self.tables["font_packs"]["option_sets"]:
             platform = option_set["key"]["platform"]
@@ -259,7 +262,7 @@ class CatalogueIntegrityTests(unittest.TestCase):
                     self.assertTrue(1 <= option["weight"] <= 100)
                 else:
                     self.assertTrue(required, "the core pack requires nothing")
-                if platform == "windows":
+                if platform == "windows" and option["pack_kind"] == "core":
                     self.assertLessEqual(set(required), WINDOWS_11_FONTS_REPO, option["id"])
                     from_repo = WINDOWS_11_FONTS_REPO | {
                         instance for family, instances in WINDOWS_VARIABLE_INSTANCES.items()
@@ -530,37 +533,20 @@ class CompositionTests(unittest.TestCase):
                 resolver.resolve_profile(dict(BASE_CONFIG, catalogue_path=catalogue_path))
             self.assertIn("audio.hardware_buffer_frames", str(caught.exception))
 
-    def test_the_extensions_axis_draws_one_boolean_state_per_seed(self) -> None:
-        """chrome.runtime on a web page is a persona, and absence is a claim.
+    def test_the_extensions_axis_serves_no_connectable_extension(self) -> None:
+        """chrome.runtime on a web page comes from installed extensions only.
 
         Fresh Chrome has no chrome.runtime on an ordinary page -- measured,
-        both browsers -- so false is the common state and it is served
-        explicitly rather than by omission, because omission leaves the host's
-        own extension set to answer. The minority state is the MetaMask shape.
-        Two properties matter: the state is a boolean the loader will accept
-        (it refuses anything else), and it is fixed by the seed rather than by
-        the platform, because the same wallet extension is installed on all
-        three.
+        both browsers -- so every profile serves an explicit false, a boolean
+        the loader accepts, and only an extension really installed in the
+        profile can show one, as in stock Chrome.
         """
-        drawn: dict[str, Counter] = {p: Counter() for p in sorted(resolver.PLATFORMS)}
         for persona in sorted(resolver.PLATFORMS):
             for seed in range(60):
-                first = resolver.resolve_profile(dict(
+                profile = resolver.resolve_profile(dict(
                     BASE_CONFIG, fingerprint=seed, fingerprint_platform=persona))
-                again = resolver.resolve_profile(dict(
-                    BASE_CONFIG, fingerprint=seed, fingerprint_platform=persona))
-                state = first["extensions"]["externally_connectable"]
-                self.assertIsInstance(state, bool)
-                self.assertEqual(state, again["extensions"]["externally_connectable"])
-                drawn[persona][state] += 1
-        for persona, counts in drawn.items():
-            self.assertEqual(60, sum(counts.values()))
-            # Both states reachable, and the majority is absence. The weights
-            # are 75/25, so anything outside a wide band around that means the
-            # table's weights stopped reaching the draw.
-            self.assertGreater(counts[False], counts[True], persona)
-            self.assertGreater(counts[True], 0, persona)
-            self.assertLess(counts[True], 30, persona)
+                self.assertIs(profile["extensions"]["externally_connectable"], False,
+                              (persona, seed))
 
     def test_work_area_is_derived_from_the_panel_and_the_furniture_insets(self) -> None:
         for seed in range(25):
@@ -1007,9 +993,11 @@ class CompositionTests(unittest.TestCase):
         # voice variants of 2026-10-19 moved it; AliasMode builds only Windows
         # x86, which cannot compose this ARM-host profile, so the new digest is
         # the resolver's, after the native compositor of that build composed
-        # byte-identical profiles for the same seeds on its own host.
+        # byte-identical profiles for the same seeds on its own host. The
+        # Windows font packs of 2026-10-23 (stock groups in the core pack,
+        # Office and language-feature packs) moved it again, the same way.
         "windows": ("fp-b0b97b3a3531b65ee50f45fc", GOLDEN_SECTIONS,
-                    "57f1181aafdafc263a0dd787bd5db3dc164753bba03ddcbd73d6a69608285218"),
+                    "3d16d30e98b58f9e9c4011b613746f0c14f457cc5d51cbee793dec4926ed9311"),
         "macos": ("fp-60eab51485a4a8465ce3c24a", GOLDEN_SECTIONS,
                   "70a5713449ce75d8ef0cc3d027bef4acc321254942790cfa5e486c0105f8195a"),
         "linux": ("fp-8c5f63da9ef88ea749549a91", GOLDEN_SECTIONS,

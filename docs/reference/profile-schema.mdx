@@ -249,7 +249,7 @@ What `navigator.getBattery()` reports. Without this section, the host's battery 
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `externally_connectable` | boolean | Whether an installed extension exposes `chrome.runtime` to ordinary web pages. `false` is a Chrome without such an extension. `true` puts `chrome.runtime` on every `http` and `https` page, as some wallet extensions do. |
+| `externally_connectable` | boolean | Whether an installed extension exposes `chrome.runtime` to ordinary web pages. `false` is a Chrome without such an extension, and every composed profile says `false`: only extensions installed in the profile can show `chrome.runtime`. `true`, in a profile you write, puts `chrome.runtime` on every `http` and `https` page, as some wallet extensions do. |
 
 ## Complete example
 
