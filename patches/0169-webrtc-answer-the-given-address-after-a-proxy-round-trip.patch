@@ -1,0 +1,243 @@
+Subject: [PATCH] webrtc: answer the given address after a round trip through the proxy
+
+The server-reflexive candidate gathered for --fingerprint-webrtc-ip came
+20 to 60 ms after the binding request. A host at the proxy's address
+cannot hear from a STUN server sooner than a round trip through the
+proxy, and WHOX measured the answer faster than its own TCP round trip
+to that address.
+
+The renderer now passes the allocator the round trip the browser already
+timed loading the frame's document, or the nearest ancestor document in
+its process: the TLS handshake or the wait for the response headers,
+whichever was shorter, both made through the proxy. The synthetic STUN
+answer comes after that round trip, capped at a second, plus up to a
+sixteenth of it as jitter; without a timed load, after 90 to 160 ms.
+Candidates keep their order and gathering still completes after the
+server-reflexive candidate. Nothing new is sent: no UDP leaves the
+machine and no request is made to time the proxy.
+
+diff --git a/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc b/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
+index 921fac2..1aee24f 100644
+--- a/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
++++ b/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
+@@ -59,7 +59,11 @@
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+ #include "third_party/blink/renderer/core/frame/policy_container.h"
++#include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
++#include "third_party/blink/renderer/core/loader/document_loader.h"
++#include "third_party/blink/renderer/core/loader/frame_loader.h"
+ #include "third_party/blink/renderer/core/page/chrome_client.h"
++#include "third_party/blink/renderer/core/page/frame_tree.h"
+ #include "third_party/blink/renderer/core/page/page.h"
+ #include "third_party/blink/renderer/core/probe/core_probes.h"
+ #include "third_party/blink/renderer/modules/mediastream/media_constraints.h"
+@@ -71,6 +75,7 @@
+ #include "third_party/blink/renderer/platform/graphics/video_frame_sink_bundle.h"
+ #include "third_party/blink/renderer/platform/heap/cross_thread_persistent.h"
+ #include "third_party/blink/renderer/platform/heap/persistent.h"
++#include "third_party/blink/renderer/platform/loader/fetch/resource_load_timing.h"
+ #include "third_party/blink/renderer/platform/mediastream/webrtc_uma_histograms.h"
+ #include "third_party/blink/renderer/platform/mojo/mojo_binding_context.h"
+ #include "third_party/blink/renderer/platform/p2p/empty_network_manager.h"
+@@ -1007,6 +1012,46 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
+   }
+ }
+ 
++namespace {
++
++// Apostate: a round trip through the proxy to a server, as the browser timed
++// it loading the frame's document or the nearest ancestor document in this
++// process: its TLS handshake or its wait for the response headers, whichever
++// was shorter. Each takes at least one round trip through the proxy.
++std::optional<base::TimeDelta> DocumentRoundTrip(WebLocalFrame* web_frame) {
++  for (Frame* frame = To<WebLocalFrameImpl>(web_frame)->GetFrame(); frame;
++       frame = frame->Tree().Parent()) {
++    auto* local_frame = DynamicTo<LocalFrame>(frame);
++    if (!local_frame) {
++      break;
++    }
++    DocumentLoader* loader = local_frame->Loader().GetDocumentLoader();
++    const ResourceLoadTiming* timing =
++        loader ? loader->GetResponse().GetResourceLoadTiming() : nullptr;
++    if (!timing) {
++      continue;
++    }
++    std::optional<base::TimeDelta> round_trip;
++    if (!timing->SslStart().is_null() && timing->SslEnd() > timing->SslStart()) {
++      round_trip = timing->SslEnd() - timing->SslStart();
++    }
++    if (!timing->SendEnd().is_null() &&
++        timing->ReceiveHeadersStart() > timing->SendEnd()) {
++      const base::TimeDelta wait =
++          timing->ReceiveHeadersStart() - timing->SendEnd();
++      if (!round_trip || wait < *round_trip) {
++        round_trip = wait;
++      }
++    }
++    if (round_trip) {
++      return round_trip;
++    }
++  }
++  return std::nullopt;
++}
++
++}  // namespace
++
+ std::unique_ptr<webrtc::PortAllocator>
+ PeerConnectionDependencyFactory::CreatePortAllocator(
+     blink::WebLocalFrame* web_frame) {
+@@ -1108,6 +1153,8 @@ PeerConnectionDependencyFactory::CreatePortAllocator(
+     port_config.enable_nonproxied_udp = false;
+   }
+ 
++  port_config.stun_round_trip = DocumentRoundTrip(web_frame);
++
+   std::unique_ptr<webrtc::NetworkManager> network_manager;
+   if (port_config.enable_multiple_routes) {
+     network_manager = std::make_unique<FilteringNetworkManager>(
+diff --git a/third_party/blink/renderer/platform/p2p/port_allocator.cc b/third_party/blink/renderer/platform/p2p/port_allocator.cc
+index 1da016b..e2835ee 100644
+--- a/third_party/blink/renderer/platform/p2p/port_allocator.cc
++++ b/third_party/blink/renderer/platform/p2p/port_allocator.cc
+@@ -46,6 +46,10 @@ P2PPortAllocator::P2PPortAllocator(
+   }
+   set_flags(flags);
+   set_allow_tcp_listen(false);
++  if (config_.stun_round_trip) {
++    set_synthetic_stun_round_trip(
++        webrtc::TimeDelta::Micros(config_.stun_round_trip->InMicroseconds()));
++  }
+ }
+ 
+ P2PPortAllocator::~P2PPortAllocator() {}
+diff --git a/third_party/blink/renderer/platform/p2p/port_allocator.h b/third_party/blink/renderer/platform/p2p/port_allocator.h
+index b071e64..57b0c86 100644
+--- a/third_party/blink/renderer/platform/p2p/port_allocator.h
++++ b/third_party/blink/renderer/platform/p2p/port_allocator.h
+@@ -6,7 +6,9 @@
+ #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_P2P_PORT_ALLOCATOR_H_
+ 
+ #include <memory>
++#include <optional>
+ 
++#include "base/time/time.h"
+ #include "third_party/blink/renderer/platform/platform_export.h"
+ #include "third_party/webrtc/p2p/client/basic_port_allocator.h"
+ 
+@@ -35,6 +37,11 @@ class PLATFORM_EXPORT P2PPortAllocator : public webrtc::BasicPortAllocator {
+     // only in effect when the |enable_multiple_routes| is false or the
+     // permission check of mic/camera is denied.
+     bool enable_default_local_candidate = true;
++
++    // Apostate: a round trip through the proxy to a server, as the browser
++    // measured it. A binding request answered for --fingerprint-webrtc-ip
++    // takes as long.
++    std::optional<base::TimeDelta> stun_round_trip;
+   };
+ 
+   P2PPortAllocator(
+diff --git a/third_party/webrtc/p2p/client/basic_port_allocator.cc b/third_party/webrtc/p2p/client/basic_port_allocator.cc
+index a282a1b..ef0145b 100644
+--- a/third_party/webrtc/p2p/client/basic_port_allocator.cc
++++ b/third_party/webrtc/p2p/client/basic_port_allocator.cc
+@@ -198,16 +198,23 @@ std::optional<IPAddress> SyntheticReflexiveAddress() {
+ // and drops every other datagram. A UDPPort over it gathers the host and
+ // server-reflexive candidates such a host gathers, and no packet leaves this
+ // machine.
++//
++// The answer comes after `round_trip` and a little jitter: a binding request
++// from a host at the proxy's address travels through the proxy, so it cannot
++// be answered sooner than a round trip through it. An answer that came sooner
++// would put the address closer to the STUN server than light allows.
+ class SyntheticUdpSocket : public AsyncPacketSocket {
+  public:
+   SyntheticUdpSocket(TaskQueueBase* network_thread,
+                      const SocketAddress& local_address,
+                      const SocketAddress& reflexive,
+-                     const ServerAddresses& stun_servers)
++                     const ServerAddresses& stun_servers,
++                     std::optional<TimeDelta> round_trip)
+       : network_thread_(network_thread),
+         local_address_(local_address),
+         reflexive_(reflexive),
+-        stun_servers_(stun_servers) {}
++        stun_servers_(stun_servers),
++        round_trip_(round_trip) {}
+ 
+   SocketAddress GetLocalAddress() const override { return local_address_; }
+   SocketAddress GetRemoteAddress() const override { return SocketAddress(); }
+@@ -232,7 +239,7 @@ class SyntheticUdpSocket : public AsyncPacketSocket {
+                    [this, address, transaction_id] {
+                      Answer(address, transaction_id);
+                    }),
+-          TimeDelta::Millis(base::RandIntInclusive(20, 60)));
++          AnswerDelay());
+     }
+     return static_cast<int>(size);
+   }
+@@ -266,10 +273,23 @@ class SyntheticUdpSocket : public AsyncPacketSocket {
+     }
+   }
+ 
++  // The round trip, capped at a second, plus up to about a sixteenth of it.
++  // Without one, a typical round trip through a proxy.
++  TimeDelta AnswerDelay() const {
++    if (!round_trip_) {
++      return TimeDelta::Millis(base::RandIntInclusive(90, 160));
++    }
++    const int round_trip_ms = static_cast<int>(
++        std::clamp<int64_t>(round_trip_->ms(), 1, 1000));
++    return TimeDelta::Millis(
++        round_trip_ms + base::RandIntInclusive(1, 3 + round_trip_ms / 16));
++  }
++
+   TaskQueueBase* const network_thread_;
+   const SocketAddress local_address_;
+   const SocketAddress reflexive_;
+   const ServerAddresses stun_servers_;
++  const std::optional<TimeDelta> round_trip_;
+   bool closed_ = false;
+   ScopedTaskSafety safety_;
+ };
+@@ -1594,7 +1614,8 @@ void AllocationSequence::CreateUDPPorts() {
+         SocketAddress(network_->GetBestIP(),
+                       SyntheticLocalPort(allocator.min_port(),
+                                          allocator.max_port())),
+-        SocketAddress(*reflexive, base::RandIntInclusive(1024, 65535)), servers);
++        SocketAddress(*reflexive, base::RandIntInclusive(1024, 65535)), servers,
++        allocator.synthetic_stun_round_trip());
+     udp_socket_->RegisterReceivedPacketCallback(
+         [&](AsyncPacketSocket* socket, const ReceivedIpPacket& packet) {
+           OnReadPacket(socket, packet);
+diff --git a/third_party/webrtc/p2p/client/basic_port_allocator.h b/third_party/webrtc/p2p/client/basic_port_allocator.h
+index 97c1a7d..a898812 100644
+--- a/third_party/webrtc/p2p/client/basic_port_allocator.h
++++ b/third_party/webrtc/p2p/client/basic_port_allocator.h
+@@ -106,6 +106,18 @@ class RTC_EXPORT BasicPortAllocator : public PortAllocator {
+ 
+   const Environment& env() const { return env_; }
+ 
++  // How long a binding request to a STUN server takes from this browser, as
++  // its embedder measured a round trip through the proxy. A UDP port
++  // gathering --fingerprint-webrtc-ip's address with no UDP socket answers
++  // its own binding requests after that long; unset, after a typical proxy
++  // round trip.
++  void set_synthetic_stun_round_trip(std::optional<TimeDelta> round_trip) {
++    synthetic_stun_round_trip_ = round_trip;
++  }
++  std::optional<TimeDelta> synthetic_stun_round_trip() const {
++    return synthetic_stun_round_trip_;
++  }
++
+  private:
+   bool MdnsObfuscationEnabled() const override;
+ 
+@@ -120,6 +132,7 @@ class RTC_EXPORT BasicPortAllocator : public PortAllocator {
+ 
+   std::unique_ptr<LocalNetworkAccessPermissionFactoryInterface>
+       lna_permission_factory_;
++  std::optional<TimeDelta> synthetic_stun_round_trip_;
+ };
+ 
+ struct PortConfiguration;

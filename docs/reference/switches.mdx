@@ -195,9 +195,9 @@ The seed never draws the locale or the timezone. The Python and Node packages fi
 
 ### `--fingerprint-locale`
 
-- **One tag**, such as `de-DE`, sets the browser's UI locale. `Intl`, date and number formats and `navigator.language` follow it. The language list is Chrome's own default list for that locale, such as `de-DE,de,en-US,en` for `de-DE`.
-- **A comma list**, such as `de-DE,de`, sets the language list exactly. Its first tag is the UI locale.
-- As in Chrome, `navigator.languages` names only the first language of the list, and a page's `Accept-Language` header sends that language and its base language, such as `de-DE,de;q=0.9`. A site that answers with `Content-Language` and `Variants` headers can get another language from the list, as from Chrome.
+- **One tag**, such as `de-DE`, sets the browser's UI locale. `Intl`, date and number formats and `navigator.language` follow it. `navigator.languages` and the `Accept-Language` header carry Chrome's own default list for that locale, such as `de-DE,de,en-US,en` for `de-DE`.
+- **A comma list**, such as `de-DE,de`, sets `navigator.languages` and `Accept-Language` exactly. Its first tag is the UI locale.
+- As in Chrome on the stable channel, `navigator.languages` lists the whole list and `Accept-Language` sends it with q-values, such as `en-US,en;q=0.9`, as the last header of a request.
 - **Default.** `en-US`, never the host's language. Host mode keeps the host's.
 - The browser writes the UI locale into `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG` before it starts any other process. `--lang` has no effect on a persona.
 - The speech voices follow the first tag. A Windows persona lists its `en-GB` voice set for `en-GB` and its `en-US` set for every other tag.
@@ -216,7 +216,7 @@ An IANA timezone name, such as `Europe/Berlin`. `Intl`, `Date` and the timezone 
 
 ### `--fingerprint-webrtc-ip`
 
-An IP address shown as the public address in the ICE candidates, in place of the real address. An mDNS name stays. The browser does not check the value. Where UDP can be used, packets still leave from the real socket, so a peer can read the real source address off the packets it receives. Where no UDP socket can be opened, such as behind an HTTP proxy, with `--fingerprint-webrtc-udp=block` or under the `disable_non_proxied_udp` policy, the browser gathers a server-reflexive candidate with this address and sends nothing. See [WebRTC](/guides/webrtc#the-switches).
+An IP address shown as the public address in the ICE candidates, in place of the real address. An mDNS name stays. The browser does not check the value. Where UDP can be used, packets still leave from the real socket, so a peer can read the real source address off the packets it receives. Where no UDP socket can be opened, such as behind an HTTP proxy, with `--fingerprint-webrtc-udp=block` or under the `disable_non_proxied_udp` policy, the browser gathers a server-reflexive candidate with this address and sends nothing. The candidate comes one round trip through the proxy after the request, as the browser timed it loading the page. See [WebRTC](/guides/webrtc#the-switches).
 
 Behind a proxy, the Node package passes the exit address from its GeoIP lookup as this switch. The Python package does not.
 
@@ -238,7 +238,7 @@ Any other value is logged and treated as `block`.
 
 Makes profiles on one host differ where they would otherwise be identical. Every change depends only on the profile, so the same seed gives the same values on every launch, in every tab and in workers.
 
-- **Canvas and WebGL readback.** Anti-aliased pixels move by up to two steps in colour and alpha and stay a blend of their neighbours. On a 2D canvas only pixels at an edge between two colours move, so solid areas, hard edges, lone dots and grids of colours drawn pixel by pixel stay as rendered. `getImageData` (whole canvas or part of it), `toDataURL`, `toBlob`, `convertToBlob` and WebGL `readPixels` agree with each other.
+- **Canvas and WebGL readback.** Anti-aliased pixels, such as the edges of text and curves and gradients, move by up to three steps in colour and alpha. Each value moves inside a band of values of its own profile, so a read written back reads back unchanged, a `toDataURL` image decoded and read again equals a direct read, and `getImageData` (whole canvas or part of it), `toDataURL`, `toBlob`, `convertToBlob`, ImageBitmap copies and WebGL `readPixels` agree with each other. Solid areas, hard edges, clears, canvases under 16 pixels on a side and 2D canvases that hold only what the page wrote (`putImageData`, pixel-aligned opaque rectangles) read back exactly. Alpha never moves off 0 or 255, and a zero or full colour channel stays as it is.
 - **Text.** Each installed font family draws and measures 1 to 4 parts per thousand larger or smaller. `measureText`, element and range rects, layout, SVG text and canvas text agree with each other. Web fonts are unchanged.
 - **Audio.** Oscillator wave tables and the compressor's makeup gain move by a few units in the last place, so `OfflineAudioContext` output and `AnalyserNode` data differ per profile. An `AudioBuffer` a page writes reads back unchanged.
 

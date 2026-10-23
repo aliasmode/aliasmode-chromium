@@ -155,10 +155,10 @@
 0159-display-a-forced-scale-factor-sets-the-pixel-ratio.patch
 0160-window-a-label-switch-prefixes-the-native-window-title.patch
 0161-tls-ask-for-server-padding-as-chrome-does.patch
-0162-locale-reduce-accept-language-as-chrome-does.patch
 0163-netinfo-navigation-network-hints-from-the-profile.patch
 0164-webrtc-gather-the-given-address-when-udp-cannot-be-used.patch
 0165-noise-one-profile-seed-for-every-noise-surface.patch
 0166-fonts-installed-families-scale-per-profile.patch
 0167-audio-oscillator-tables-and-compressor-gain-per-profile.patch
-0168-canvas-noise-moves-blended-pixels-and-their-alpha.patch
+0168-canvas-noise-moves-a-pixel-inside-its-band.patch
+0169-webrtc-answer-the-given-address-after-a-proxy-round-trip.patch

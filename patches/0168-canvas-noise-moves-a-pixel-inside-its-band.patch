@@ -1,0 +1,1326 @@
+Subject: [PATCH] canvas: noise moves a pixel inside its band, the same on every route
+
+CreepJS reported "pixel data modified": random pixels written with
+putImageData came back about five bytes off, and a canvas read through
+toDataURL, decoded and drawn again differed from a direct read by about
+1300 bytes. Stock Chrome gives 0 for both.
+
+Each 8-bit channel value now falls in a band of up to four values whose
+position is the profile's own; a first band holds 0 and the faintest
+values. Only an anti-aliased pixel moves -- unlike its four direct
+neighbours, or among three or more values in its 3x3 neighbourhood,
+judged on bands -- and it moves inside its band, keyed on the seed and
+the bands around it in any order. Noise applied to noised pixels changes
+nothing, so a read written back reads back unchanged, an encoded copy
+decoded and read again equals the direct read, a read of part of a
+canvas agrees with a read of all of it, and a bottom-up WebGL read agrees
+with the same pixels read top-down. getImageData, toDataURL, toBlob,
+convertToBlob (also in workers), ImageBitmap copies and WebGL readPixels
+give the same pixels. Alpha moves only where alpha varies and never off 0
+or 255; colour moves only in pixels at least half opaque, and a zero or a
+full channel stays as it is. Hashes of rounded values, of alpha and of
+where alpha is non-zero still differ between profiles.
+
+A 2D canvas that holds only what the page wrote itself -- putImageData,
+pixel-aligned opaque solid rectangles, clears -- reads back exactly, and
+so does any canvas or drawing buffer under 16 pixels on a side. An RGBA
+readPixels reads the framebuffer again with a one-pixel border, so its
+edge pixels key as in a read of the whole buffer. Signed, float and wider
+stores keep a one-step rule.
+
+diff --git a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc
+index 4f1b90c..6361ac0 100644
+--- a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc
++++ b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc
+@@ -6,6 +6,7 @@
+ 
+ #include <algorithm>
+ #include <array>
++#include <limits>
+ #include <optional>
+ #include <string_view>
+ 
+@@ -26,6 +27,7 @@
+ #include "third_party/skia/include/core/SkImage.h"
+ #include "third_party/skia/include/core/SkImageInfo.h"
+ #include "third_party/skia/include/core/SkPixmap.h"
++#include "third_party/skia/include/core/SkRect.h"
+ #include "ui/gfx/skia_span_util.h"
+ 
+ namespace blink::apostate_readback_noise {
+@@ -351,15 +353,25 @@ void StepChannel(base::span<uint8_t> pixel,
+   }
+ }
+ 
++// The value a page reads, per logical channel, for one pixel.
++using CanonicalPixel = std::array<int64_t, 4>;
++
++CanonicalPixel CanonicalValues(base::span<const uint8_t> pixel,
++                               const Channels& channels) {
++  CanonicalPixel values;
++  for (uint8_t logical_index = 0; logical_index < 4; ++logical_index) {
++    values[logical_index] = CanonicalValue(pixel, channels, logical_index);
++  }
++  return values;
++}
++
+ // FNV-1a over one pixel's canonical channel values, each folded as eight
+ // bytes so that a store's width and order cannot reach the key. This is the
+ // pixel's identity: the colour a page reads, and nothing about how it is held.
+-uint64_t CanonicalPixelKey(base::span<const uint8_t> pixel,
+-                           const Channels& channels) {
++uint64_t CanonicalPixelKey(const CanonicalPixel& values) {
+   uint64_t hash = kFnvOffset;
+-  for (uint8_t logical_index = 0; logical_index < 4; ++logical_index) {
+-    const uint64_t value = static_cast<uint64_t>(
+-        CanonicalValue(pixel, channels, logical_index));
++  for (int64_t signed_value : values) {
++    const uint64_t value = static_cast<uint64_t>(signed_value);
+     for (int byte = 0; byte < 8; ++byte) {
+       hash ^= (value >> (byte * 8)) & 0xFFu;
+       hash *= kFnvPrime;
+@@ -370,7 +382,7 @@ uint64_t CanonicalPixelKey(base::span<const uint8_t> pixel,
+ 
+ // True when every pixel of the rectangle carries the same bytes. A solid fill
+ // is the one case a page can check without knowing anything about the machine,
+-// so it comes back exactly as it went in. The 3x3 rule below would reach the
++// so it comes back exactly as it went in. The rule below would reach the
+ // same answer; this is the cheap path and the explicit guarantee.
+ bool WholeSurfaceIsOneValue(const Surface& surface) {
+   const size_t row_bytes = surface.pixel_stride *
+@@ -400,13 +412,36 @@ base::span<uint8_t> PixelAt(const Surface& surface, int32_t x, int32_t y) {
+       surface.pixel_stride);
+ }
+ 
+-void DigestRow(const Surface& surface, int32_t y, base::span<uint64_t> out) {
++// The clean canonical values and keys of one row, taken before the row is
++// written, so every decision is made on the image the renderer produced.
++struct RowDigest {
++  Vector<uint64_t> keys;
++  Vector<CanonicalPixel> values;
++};
++
++void DigestRow(const Surface& surface, int32_t y, RowDigest& out) {
+   for (int32_t x = 0; x < surface.width; ++x) {
+-    out[static_cast<size_t>(x)] =
+-        CanonicalPixelKey(PixelAt(surface, x, y), surface.channels);
++    const CanonicalPixel values =
++        CanonicalValues(PixelAt(surface, x, y), surface.channels);
++    out.values[static_cast<wtf_size_t>(x)] = values;
++    out.keys[static_cast<wtf_size_t>(x)] = CanonicalPixelKey(values);
+   }
+ }
+ 
++// The part of a surface to perturb. Neighbourhoods are read from the whole
++// surface, so a caller that hands in the requested rectangle plus a one-pixel
++// border inside the canvas gets the same answer for every pixel as a read of
++// the whole canvas would.
++struct Region {
++  int32_t left = 0;
++  int32_t top = 0;
++  int32_t right = 0;
++  int32_t bottom = 0;
++};
++
++// Stands in for a neighbour outside the canvas in the hash input.
++constexpr uint64_t kOutsideKey = 0x9e3779b97f4a7c15ull;
++
+ std::optional<Channels> ChannelsForColorType(SkColorType color_type,
+                                              SkAlphaType alpha_type) {
+   constexpr uint8_t kNone = Channels::kAbsent;
+@@ -483,120 +518,339 @@ std::optional<Channels> ChannelsForColorType(SkColorType color_type,
+   }
+ }
+ 
+-}  // namespace
+-
+-bool Enabled() {
+-  return GetPolicy().enabled;
+-}
+-
+-uint64_t Seed() {
+-  return GetPolicy().seed;
+-}
+-
+-void Apply(const Surface& surface) {
+-  if (!Enabled() || surface.width <= 0 || surface.height <= 0 ||
+-      surface.pixel_stride == 0 ||
++// True when the region and surface describe pixels the kernels can walk.
++bool Walkable(const Surface& surface, const Region& region) {
++  if (surface.width <= 0 || surface.height <= 0 || surface.pixel_stride == 0 ||
+       surface.row_stride <
+           surface.pixel_stride * static_cast<size_t>(surface.width)) {
+-    return;
++    return false;
++  }
++  if (region.left < 0 || region.top < 0 || region.right > surface.width ||
++      region.bottom > surface.height || region.left >= region.right ||
++      region.top >= region.bottom) {
++    return false;
+   }
+   const size_t extent =
+       surface.row_stride * static_cast<size_t>(surface.height - 1) +
+       surface.pixel_stride * static_cast<size_t>(surface.width);
+-  if (surface.bytes.size() < extent) {
+-    return;
+-  }
+-  const Channels& channels = surface.channels;
+-  if (channels.logical[0] == Channels::kAbsent &&
+-      channels.logical[1] == Channels::kAbsent &&
+-      channels.logical[2] == Channels::kAbsent) {
+-    // Nothing but alpha, which is never moved.
+-    return;
+-  }
+-  if (WholeSurfaceIsOneValue(surface)) {
+-    return;
+-  }
++  return surface.bytes.size() >= extent;
++}
+ 
+-  // Row keys for the three rows the policy reads, rolled forward. Each row is
+-  // keyed before it is written, so the key is always the clean image even
+-  // though the perturbation happens in place.
++// Signed, floating-point and wider-than-8-bit stores, which no canvas
++// fingerprint reads by default: a pixel that is a blend of its neighbours
++// takes one step of -1, 0 or +1 on each colour channel, keyed on the pixel
++// and its neighbours.
++void ApplyLegacy(const Surface& surface, const Region& region) {
++  const Channels& channels = surface.channels;
+   const wtf_size_t width = base::checked_cast<wtf_size_t>(surface.width);
+-  std::array<Vector<uint64_t>, 3> rows;
+-  for (Vector<uint64_t>& row : rows) {
+-    row.resize(width);
++  std::array<RowDigest, 3> rows;
++  for (RowDigest& row : rows) {
++    row.keys.resize(width);
++    row.values.resize(width);
++  }
++  const auto row_at = [&rows](int32_t y) -> RowDigest& {
++    return rows[static_cast<size_t>(y) % 3u];
++  };
++  if (region.top > 0) {
++    DigestRow(surface, region.top - 1, row_at(region.top - 1));
+   }
+-  DigestRow(surface, 0, base::span<uint64_t>(rows[0]));
+-  if (surface.height > 1) {
+-    DigestRow(surface, 1, base::span<uint64_t>(rows[1]));
++  DigestRow(surface, region.top, row_at(region.top));
++  if (region.top + 1 < surface.height) {
++    DigestRow(surface, region.top + 1, row_at(region.top + 1));
+   }
+ 
+   const NoiseHash origin{NoiseToken(Seed())};
+-  for (int32_t y = 0; y < surface.height; ++y) {
+-    if (y >= 1 && y + 1 < surface.height) {
+-      DigestRow(surface, y + 1,
+-                base::span<uint64_t>(rows[static_cast<size_t>(y + 1) % 3u]));
++  for (int32_t y = region.top; y < region.bottom; ++y) {
++    if (y > region.top && y + 1 < surface.height) {
++      DigestRow(surface, y + 1, row_at(y + 1));
+     }
+-    const std::array<base::span<const uint64_t>, 3> neighbour_rows = {
+-        base::span<const uint64_t>(
+-            rows[static_cast<size_t>(y == 0 ? 0 : y - 1) % 3u]),
+-        base::span<const uint64_t>(rows[static_cast<size_t>(y) % 3u]),
+-        base::span<const uint64_t>(
+-            rows[static_cast<size_t>(y + 1 < surface.height ? y + 1 : y) % 3u]),
+-    };
+-    for (int32_t x = 0; x < surface.width; ++x) {
+-      const uint64_t centre = neighbour_rows[1][static_cast<size_t>(x)];
+-      bool uniform = true;
+-      for (int32_t dy = 0; dy < 3 && uniform; ++dy) {
++    const RowDigest& here = row_at(y);
++    for (int32_t x = region.left; x < region.right; ++x) {
++      const uint64_t centre = here.keys[static_cast<wtf_size_t>(x)];
++      const CanonicalPixel& value = here.values[static_cast<wtf_size_t>(x)];
++      std::array<uint64_t, 8> neighbour_keys;
++      CanonicalPixel low;
++      CanonicalPixel high;
++      low.fill(std::numeric_limits<int64_t>::max());
++      high.fill(std::numeric_limits<int64_t>::min());
++      size_t count = 0;
++      bool repeats_a_neighbour = false;
++      bool has_neighbour = false;
++      for (int32_t dy = -1; dy <= 1; ++dy) {
+         for (int32_t dx = -1; dx <= 1; ++dx) {
+-          const int32_t nx = std::clamp(x + dx, 0, surface.width - 1);
+-          if (neighbour_rows[dy][static_cast<size_t>(nx)] != centre) {
+-            uniform = false;
+-            break;
++          if (dx == 0 && dy == 0) {
++            continue;
++          }
++          const int32_t nx = x + dx;
++          const int32_t ny = y + dy;
++          if (nx < 0 || ny < 0 || nx >= surface.width ||
++              ny >= surface.height) {
++            neighbour_keys[count++] = kOutsideKey;
++            continue;
++          }
++          const RowDigest& row = row_at(ny);
++          const uint64_t key = row.keys[static_cast<wtf_size_t>(nx)];
++          neighbour_keys[count++] = key;
++          repeats_a_neighbour |= key == centre;
++          has_neighbour = true;
++          const CanonicalPixel& other = row.values[static_cast<wtf_size_t>(nx)];
++          for (size_t c = 0; c < 4; ++c) {
++            low[c] = std::min(low[c], other[c]);
++            high[c] = std::max(high[c], other[c]);
+           }
+         }
+       }
+-      // A pixel that sits in a patch of one colour is left alone. Flat regions
+-      // are what a page can predict; edges are what a renderer's rasteriser
+-      // signs its name on.
+-      if (uniform) {
++      if (repeats_a_neighbour || !has_neighbour) {
++        continue;
++      }
++      bool blend = true;
++      for (size_t c = 0; c < 4 && blend; ++c) {
++        if (channels.logical[c] != Channels::kAbsent &&
++            (value[c] < low[c] || value[c] > high[c])) {
++          blend = false;
++        }
++      }
++      if (!blend) {
+         continue;
+       }
+-
+       NoiseHash hash = origin;
+       hash.Update(centre);
+-      for (int32_t dy = 0; dy < 3; ++dy) {
+-        for (int32_t dx = -1; dx <= 1; ++dx) {
+-          const int32_t nx = std::clamp(x + dx, 0, surface.width - 1);
+-          hash.Update(neighbour_rows[dy][static_cast<size_t>(nx)]);
+-        }
++      for (uint64_t key : neighbour_keys) {
++        hash.Update(key);
+       }
+-      hash.Update((static_cast<uint64_t>(y) << 32) |
+-                  static_cast<uint32_t>(x));
+-
+       base::span<uint8_t> pixel = PixelAt(surface, x, y);
+-      // Red, then green, then blue, by logical channel rather than by
+-      // position in memory, so the same colour takes the same step whichever
+-      // store it is read out of.
+       for (uint8_t logical_index = 0; logical_index < 3; ++logical_index) {
+         if (channels.logical[logical_index] == Channels::kAbsent) {
+           continue;
+         }
+-        StepChannel(pixel, channels, logical_index,
+-                    hash.GetValueBelow(3) - 1);
++        StepChannel(pixel, channels, logical_index, hash.GetValueBelow(3) - 1);
+       }
+     }
+   }
+ }
+ 
+-void ApplyToPixmap(const SkPixmap& pixmap) {
+-  if (!Enabled() || !pixmap.writable_addr() || pixmap.width() <= 0 ||
+-      pixmap.height() <= 0) {
++// ---- The 8-bit rule, which every canvas and WebGL fingerprint reads ----
++//
++// Each channel value falls in a band of up to four values. The bands start
++// 2 or 3 past a multiple of four, chosen per profile, so none lines up with a
++// power-of-two bucket: rounding the values to such a bucket, or dropping their
++// low bits, still shows a profile's own values somewhere. A value only ever
++// moves inside its band, and every decision below is taken on bands, so the
++// noise of a pixel already noised is itself: a read written back reads back
++// unchanged, an encoded copy decoded and read again equals the direct read,
++// and so does a read of part of the canvas.
++
++uint32_t BandOffset() {
++  return 2u + static_cast<uint32_t>((Seed() >> 61) & 1u);
++}
++
++// Band 0 holds 0 and the faintest values, up to `offset` + 3, so a faint
++// pixel can fade out and a faint edge still differs between profiles where
++// only the presence of alpha is hashed. Every later band is four values wide.
++uint32_t BandOf(uint32_t value, uint32_t offset) {
++  const uint32_t band = (value + 4u - offset) >> 2;
++  return band <= 1 ? 0 : band - 1;
++}
++
++// Picks a member of `value`'s band at or below `cap`. `pick` is uniform bits.
++uint32_t PickInBand(uint32_t value,
++                    uint32_t offset,
++                    uint32_t cap,
++                    uint32_t pick) {
++  const uint32_t band = BandOf(value, offset);
++  const int32_t start =
++      band == 0 ? 0
++                : static_cast<int32_t>(band) * 4 + static_cast<int32_t>(offset);
++  const int32_t end =
++      band == 0 ? static_cast<int32_t>(offset) + 3 : start + 3;
++  const int32_t low = start;
++  const int32_t high = std::min({end, 255, static_cast<int32_t>(cap)});
++  if (high < low) {
++    return std::min(value, cap);
++  }
++  return static_cast<uint32_t>(low) +
++         pick % static_cast<uint32_t>(high - low + 1);
++}
++
++uint64_t Mix(uint64_t value) {
++  value ^= value >> 30;
++  value *= 0xbf58476d1ce4e5b9ull;
++  value ^= value >> 27;
++  value *= 0x94d049bb133111ebull;
++  return value ^ (value >> 31);
++}
++
++// A pixel's red, green, blue and alpha in logical order. A store without
++// alpha reads as opaque and a missing colour as zero.
++std::array<uint32_t, 4> Rgba8(base::span<const uint8_t> pixel,
++                              const Channels& channels) {
++  std::array<uint32_t, 4> rgba = {0, 0, 0, 255};
++  for (size_t c = 0; c < 4; ++c) {
++    if (channels.logical[c] != Channels::kAbsent) {
++      rgba[c] = pixel[channels.logical[c]];
++    }
++  }
++  return rgba;
++}
++
++// The bands of a pixel, one byte per logical channel. Off the canvas a pixel
++// is transparent black, whose bands are all zero.
++uint32_t Coarse(const std::array<uint32_t, 4>& rgba, uint32_t offset) {
++  return BandOf(rgba[0], offset) | BandOf(rgba[1], offset) << 8 |
++         BandOf(rgba[2], offset) << 16 | BandOf(rgba[3], offset) << 24;
++}
++
++void ApplyBands(const Surface& surface, const Region& region) {
++  const Channels& channels = surface.channels;
++  const bool has_alpha = channels.logical[3] != Channels::kAbsent;
++  // Colour stored multiplied by alpha never exceeds it, and a colour equal to
++  // its alpha is a full-intensity channel that stays one.
++  const bool premultiplied = channels.premultiplied && has_alpha;
++  const uint32_t offset = BandOffset();
++  const uint32_t half_opaque_band = BandOf(128, offset);
++  const uint64_t seed = Seed();
++
++  // The coarse values of three rows, one pixel wider on each side.
++  const wtf_size_t span = base::checked_cast<wtf_size_t>(surface.width) + 2;
++  std::array<Vector<uint32_t>, 3> rows;
++  for (Vector<uint32_t>& row : rows) {
++    row.resize(span);
++  }
++  const auto row = [&rows](int32_t y) -> Vector<uint32_t>& {
++    return rows[static_cast<size_t>((y + 3) % 3)];
++  };
++  const auto fill = [&](int32_t y) {
++    Vector<uint32_t>& out = row(y);
++    out.Fill(0u);
++    if (y < 0 || y >= surface.height) {
++      return;
++    }
++    for (int32_t x = 0; x < surface.width; ++x) {
++      out[static_cast<wtf_size_t>(x) + 1] =
++          Coarse(Rgba8(PixelAt(surface, x, y), channels), offset);
++    }
++  };
++  fill(region.top - 1);
++  fill(region.top);
++  for (int32_t y = region.top; y < region.bottom; ++y) {
++    fill(y + 1);
++    const Vector<uint32_t>& above = row(y - 1);
++    const Vector<uint32_t>& here = row(y);
++    const Vector<uint32_t>& below = row(y + 1);
++    for (int32_t x = region.left; x < region.right; ++x) {
++      const wtf_size_t i = static_cast<wtf_size_t>(x) + 1;
++      const std::array<uint32_t, 8> around = {
++          above[i - 1], above[i], above[i + 1], here[i - 1],
++          here[i + 1],  below[i - 1], below[i], below[i + 1]};
++      const uint32_t centre = here[i];
++      // A pixel unlike its four direct neighbours, or among three or more
++      // values: anti-aliased edges, lines, blends and gradients, where
++      // rasterisers and GPUs differ between machines. Flat fills, hard edges
++      // and the edges and corners of flat shapes hold two values and stay
++      // exact.
++      bool varied = centre != around[1] && centre != around[3] &&
++                    centre != around[4] && centre != around[6];
++      uint32_t other = centre;
++      uint32_t differs = 0;
++      for (uint32_t value : around) {
++        differs |= value ^ centre;
++        if (varied || value == centre || value == other) {
++          continue;
++        }
++        if (other == centre) {
++          other = value;
++        } else {
++          varied = true;
++        }
++      }
++      if (!varied) {
++        continue;
++      }
++      // The key ignores where each neighbour sits, so a rectangle read
++      // bottom-up, as GL returns it, keys like the same pixels read top-down.
++      uint64_t neighbours = 0;
++      for (uint32_t value : around) {
++        neighbours += Mix(value * 0x9e3779b97f4a7c15ull + 0x632be59bd9b4e019ull);
++      }
++      const uint64_t bits =
++          Mix(seed ^ Mix(centre + 0xd6e8feb86659fd93ull) ^
++              (neighbours * 0xbf58476d1ce4e5b9ull));
++
++      base::span<uint8_t> pixel = PixelAt(surface, x, y);
++      const std::array<uint32_t, 4> rgba = Rgba8(pixel, channels);
++      // A colour above its alpha in a premultiplied store is raw shader
++      // output, not a blend; it stays as written.
++      if (premultiplied &&
++          std::max({rgba[0], rgba[1], rgba[2]}) > rgba[3]) {
++        continue;
++      }
++      // Alpha moves only where alpha varies around the pixel, and never off
++      // 0 or 255: nothing is drawn where nothing was, opaque stays opaque, and
++      // a translucent fill keeps its one alpha.
++      uint32_t alpha = rgba[3];
++      if (has_alpha && alpha != 0 && alpha != 255 && (differs >> 24) != 0) {
++        alpha = PickInBand(alpha, offset, 255,
++                           static_cast<uint32_t>(bits & 0xFF));
++        pixel[channels.logical[3]] = static_cast<uint8_t>(alpha);
++      }
++      // Colour moves only in a pixel at least half opaque and on a channel
++      // that varies around it. A zero channel stays zero and a full one stays
++      // full, so a pure colour keeps its exact hue.
++      const bool colour_moves = BandOf(rgba[3], offset) >= half_opaque_band;
++      for (size_t c = 0; c < 3; ++c) {
++        if (channels.logical[c] == Channels::kAbsent) {
++          continue;
++        }
++        const uint32_t value = rgba[c];
++        uint32_t moved = value;
++        if (value == 0) {
++          continue;
++        } else if (premultiplied && value == rgba[3]) {
++          moved = alpha;
++        } else if (!premultiplied && value == 255) {
++          continue;
++        } else if (colour_moves && ((differs >> (8 * c)) & 0xFF) != 0) {
++          moved = PickInBand(value, offset, premultiplied ? alpha : 255,
++                             static_cast<uint32_t>(bits >> (8 * (c + 1))) &
++                                 0xFF);
++        } else if (premultiplied) {
++          moved = std::min(value, alpha);
++        }
++        pixel[channels.logical[c]] = static_cast<uint8_t>(moved);
++      }
++    }
++  }
++}
++
++void ApplyToRegion(const Surface& surface, const Region& region) {
++  if (!Enabled() || !Walkable(surface, region)) {
+     return;
+   }
++  const Channels& channels = surface.channels;
++  if (channels.logical[0] == Channels::kAbsent &&
++      channels.logical[1] == Channels::kAbsent &&
++      channels.logical[2] == Channels::kAbsent) {
++    // Nothing but alpha: a mask, not a picture.
++    return;
++  }
++  if (WholeSurfaceIsOneValue(surface)) {
++    return;
++  }
++  if (channels.storage == Storage::kUint8) {
++    ApplyBands(surface, region);
++  } else {
++    ApplyLegacy(surface, region);
++  }
++}
++
++std::optional<Surface> SurfaceForPixmap(const SkPixmap& pixmap) {
++  if (!pixmap.writable_addr() || pixmap.width() <= 0 || pixmap.height() <= 0) {
++    return std::nullopt;
++  }
+   std::optional<Channels> channels =
+       ChannelsForColorType(pixmap.colorType(), pixmap.alphaType());
+   if (!channels) {
+-    return;
++    return std::nullopt;
+   }
+   Surface surface;
+   surface.bytes = gfx::SkPixmapToWritableSpan(pixmap);
+@@ -605,12 +859,52 @@ void ApplyToPixmap(const SkPixmap& pixmap) {
+   surface.row_stride = pixmap.rowBytes();
+   surface.pixel_stride = static_cast<size_t>(pixmap.info().bytesPerPixel());
+   surface.channels = *channels;
+-  Apply(surface);
++  return surface;
++}
++
++}  // namespace
++
++bool Exempt(int width, int height) {
++  return width < kMinNoisedSide || height < kMinNoisedSide;
++}
++
++void Apply(const Surface& surface) {
++  ApplyToRegion(surface,
++                Region{.right = surface.width, .bottom = surface.height});
++}
++
++void ApplyInside(const Surface& surface,
++                 int32_t left,
++                 int32_t top,
++                 int32_t right,
++                 int32_t bottom) {
++  ApplyToRegion(surface, Region{.left = left,
++                                .top = top,
++                                .right = right,
++                                .bottom = bottom});
++}
++
++void ApplyToPixmap(const SkPixmap& pixmap) {
++  if (!Enabled() || Exempt(pixmap.width(), pixmap.height())) {
++    return;
++  }
++  if (std::optional<Surface> surface = SurfaceForPixmap(pixmap)) {
++    Apply(*surface);
++  }
++}
++
++bool Enabled() {
++  return GetPolicy().enabled;
++}
++
++uint64_t Seed() {
++  return GetPolicy().seed;
+ }
+ 
+ scoped_refptr<StaticBitmapImage> ApplyToSnapshot(
+-    scoped_refptr<StaticBitmapImage> snapshot) {
+-  if (!Enabled() || !snapshot) {
++    scoped_refptr<StaticBitmapImage> snapshot,
++    bool drawn) {
++  if (!Enabled() || !drawn || !snapshot) {
+     return snapshot;
+   }
+   sk_sp<SkImage> source = snapshot->PaintImageForCurrentFrame().GetSwSkImage();
+@@ -618,7 +912,7 @@ scoped_refptr<StaticBitmapImage> ApplyToSnapshot(
+     return snapshot;
+   }
+   const SkImageInfo info = source->imageInfo();
+-  if (info.isEmpty()) {
++  if (info.isEmpty() || Exempt(info.width(), info.height())) {
+     return snapshot;
+   }
+   SkBitmap perturbed;
+@@ -626,7 +920,9 @@ scoped_refptr<StaticBitmapImage> ApplyToSnapshot(
+       !source->readPixels(nullptr, perturbed.pixmap(), 0, 0)) {
+     return snapshot;
+   }
+-  ApplyToPixmap(perturbed.pixmap());
++  if (std::optional<Surface> surface = SurfaceForPixmap(perturbed.pixmap())) {
++    Apply(*surface);
++  }
+   perturbed.setImmutable();
+   sk_sp<SkImage> image = perturbed.asImage();
+   if (!image) {
+@@ -645,41 +941,55 @@ scoped_refptr<StaticBitmapImage> ApplyToSnapshot(
+ bool ReadPixelsForPage(const cc::PaintImage& image,
+                        const SkPixmap& dst,
+                        int src_x,
+-                       int src_y) {
++                       int src_y,
++                       bool drawn) {
+   const auto plain = [&] {
+     return image.readPixels(dst.info(), dst.writable_addr(), dst.rowBytes(),
+                             src_x, src_y);
+   };
+-  if (!Enabled() || !dst.writable_addr() || dst.width() <= 0 ||
+-      dst.height() <= 0) {
++  const SkImageInfo source_info = image.GetSkImageInfo();
++  if (!Enabled() || !drawn || !dst.writable_addr() || dst.width() <= 0 ||
++      dst.height() <= 0 || Exempt(source_info.width(), source_info.height())) {
+     return plain();
+   }
+-  const SkImageInfo source_info = image.GetSkImageInfo();
+-  if (dst.alphaType() != kUnpremul_SkAlphaType ||
+-      source_info.alphaType() != kPremul_SkAlphaType) {
+-    // Either the destination holds what the image holds, or the image has no
+-    // alpha association to undo. Perturbing the result is already perturbing
+-    // the pixels the canvas holds.
+-    const bool ok = plain();
+-    ApplyToPixmap(dst);
+-    return ok;
++  // The part of the requested rectangle the canvas covers, and that part grown
++  // by one pixel inside the canvas: the neighbours each of its pixels is
++  // decided on. With them, a read of part of the canvas perturbs every pixel
++  // exactly as a read of the whole canvas or an encoded snapshot does.
++  SkIRect covered = SkIRect::MakeXYWH(src_x, src_y, dst.width(), dst.height());
++  if (!covered.intersect(source_info.bounds())) {
++    return plain();
++  }
++  SkIRect padded = covered.makeOutset(1, 1);
++  if (!padded.intersect(source_info.bounds())) {
++    return plain();
+   }
+   // Read the image's own pixels, in its own form, and perturb those; then let
+   // Skia convert, which is the same conversion `plain()` would have done and
+   // the same one an encoder does to the same snapshot. Both routes therefore
+   // agree without the policy knowing anything about how Skia rounds.
+   SkBitmap held;
+-  if (!held.tryAllocPixels(source_info.makeWH(dst.width(), dst.height()))) {
+-    const bool ok = plain();
+-    ApplyToPixmap(dst);
+-    return ok;
++  if (!held.tryAllocPixels(
++          source_info.makeWH(padded.width(), padded.height())) ||
++      !image.readPixels(held.info(), held.getPixels(), held.rowBytes(),
++                        padded.x(), padded.y())) {
++    return plain();
+   }
+-  if (!image.readPixels(held.info(), held.getPixels(), held.rowBytes(), src_x,
+-                        src_y)) {
++  if (std::optional<Surface> surface = SurfaceForPixmap(held.pixmap())) {
++    ApplyToRegion(*surface,
++                  Region{.left = covered.x() - padded.x(),
++                         .top = covered.y() - padded.y(),
++                         .right = covered.right() - padded.x(),
++                         .bottom = covered.bottom() - padded.y()});
++  }
++  SkPixmap from;
++  SkPixmap to;
++  if (!held.pixmap().extractSubset(
++          &from, covered.makeOffset(-padded.x(), -padded.y())) ||
++      !dst.extractSubset(&to, covered.makeOffset(-src_x, -src_y))) {
+     return false;
+   }
+-  ApplyToPixmap(held.pixmap());
+-  return held.pixmap().readPixels(dst);
++  return from.readPixels(to);
+ }
+ 
+ }  // namespace apostate_readback_noise
+diff --git a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h
+index 57f924c..9fb0fd2 100644
+--- a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h
++++ b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h
+@@ -24,40 +24,34 @@ class StaticBitmapImage;
+ 
+ // The opt-in readback policy behind --fingerprint-noise. OFF unless the switch
+ // is present and the profile carries an identity to seed from, in which case
+-// every page-visible canvas and WebGL readback comes back one step away from
+-// the bytes the renderer produced.
++// the anti-aliased pixels of every page-visible canvas and WebGL readback come
++// back a few steps away from the bytes the renderer produced, the same way on
++// every read path.
+ //
+-// The policy is content-keyed, not call-keyed: the perturbation of a pixel is
+-// a function of the profile seed, the clean pixel, its clean 3x3 neighbourhood
+-// and its position in the returned rectangle, and of nothing else. Two reads
+-// of one surface therefore agree, a 1:1 canvas-to-canvas copy reads back
+-// identically, and every output route returns the same answer for the same
+-// pixels. A pixel whose 3x3 neighbourhood is one value is left alone, so a
+-// solid fill is byte-exact at every route.
++// One rule, keyed on the profile seed and the pixel's 3x3 neighbourhood and on
++// nothing else -- not on where it is or how it is read:
+ //
+-// "The same pixels" means the same COLOURS, not the same bytes, and that
+-// distinction is load-bearing. One canvas is read back through several stores:
+-// `getImageData` hands out straight-alpha RGBA8, while a snapshot bound for an
+-// encoder is the resource provider's own form, which on macOS is
+-// premultiplied BGRA8. Keying on raw memory would give those two different
+-// answers for one image -- measured, 749 of 3072 pixels disagreeing -- and
+-// stepping a premultiplied channel by one is not a step of one in what the
+-// page sees: at alpha 2 it is a step of 127. So the key and the step are both
+-// taken in a canonical form, straight alpha in logical R,G,B,A order, and the
+-// result is written back through the store's own premultiplication.
++// - Each 8-bit channel value falls in a band of up to four values whose
++//   position is the profile's own. Every decision is taken on bands and a
++//   value only moves inside its band, so noise applied to noised pixels
++//   changes nothing: getImageData, toDataURL, toBlob, convertToBlob (also in
++//   workers), ImageBitmap copies and WebGL readPixels agree, a read written
++//   back reads back unchanged, and an encoded copy decoded and read again
++//   equals the direct read. A read of part of a canvas reads its neighbours
++//   too and agrees with a read of all of it.
++// - Only pixels unlike their four direct neighbours, or among three or more
++//   values, move: anti-aliased edges, lines, blends and gradients. Flat fills,
++//   clears and the edges of flat shapes read back as drawn, and so do canvases
++//   under 16 pixels on a side and 2D canvases that hold only what the page
++//   wrote itself (putImageData, pixel-aligned opaque rectangles).
++// - Alpha moves where alpha varies and never off 0 or 255; colour moves in
++//   pixels at least half opaque, and a zero or full channel stays as it is.
+ //
+-// That is necessary but not sufficient, and the remaining half is a routing
+-// rule rather than arithmetic: the policy is applied to the pixels a canvas
+-// HOLDS, and any straight-alpha copy a page receives is then produced from
+-// those by Skia's own conversion. Reproducing that conversion instead would
+-// mean reproducing its rounding, which on this architecture is the NEON
+-// round-to-nearest-even of a float divide and not something a fork should
+-// pin. Getting it wrong by one is not a rounding error, it is a different
+-// KEY: the two routes then disagree about whether a pixel moves at all.
+-// `ReadPixelsForPage` is where that rule is kept.
+-//
+-// Alpha is never moved, and neither is a backing store: each route perturbs
+-// the copy the caller is about to see and nothing upstream of it.
++// The noise is applied to the pixels a canvas HOLDS, premultiplied where the
++// store is, and any straight-alpha copy a page receives is then produced from
++// those by Skia's own conversion, so every route unpremultiplies the same
++// bytes the same way. A backing store is never moved: each route perturbs the
++// copy the caller is about to see.
+ namespace apostate_readback_noise {
+ 
+ // How the channels of one pixel are stored.
+@@ -91,16 +85,16 @@ struct Channels {
+   // first, and the size of the packed integer.
+   std::array<uint8_t, 4> field_bits = {{0, 0, 0, 0}};
+   uint8_t packed_bytes = 0;
+-  // The store holds colour already multiplied by alpha. The step is taken on
+-  // the straight value and written back multiplied, so it is a step of one in
+-  // the value a page reads rather than in the value the store holds.
++  // The store holds colour already multiplied by alpha. An 8-bit colour then
++  // never moves above its alpha; a wider store takes its step on the straight
++  // value and writes it back multiplied.
+   bool premultiplied = false;
+ };
+ 
+ // A rectangle of interleaved pixels a page is about to see. `bytes` begins at
+ // pixel (0, 0); rows are `row_stride` bytes apart and pixels `pixel_stride`.
+-// The rectangle is read in memory order, so a bottom-up GL readback keys its
+-// rows from the bottom of the framebuffer. That is the order the caller sees.
++// The key of a pixel does not depend on which way its neighbours lie, so a
++// bottom-up GL readback keys like the same pixels read top-down.
+ struct Surface {
+   base::span<uint8_t> bytes;
+   int32_t width = 0;
+@@ -110,6 +104,10 @@ struct Surface {
+   Channels channels;
+ };
+ 
++// Canvases and drawing buffers smaller than this on either side read back as
++// drawn: tiny probe canvases hold values known per engine.
++inline constexpr int kMinNoisedSide = 16;
++
+ // Whether the opt-in is in force for this renderer. Constant for the process:
+ // the switch and the profile are both fixed before the first page loads.
+ CORE_EXPORT bool Enabled();
+@@ -117,36 +115,42 @@ CORE_EXPORT bool Enabled();
+ // The profile-derived seed. Zero when the policy is off.
+ CORE_EXPORT uint64_t Seed();
+ 
+-// Perturbs `surface` in place. A no-op unless Enabled().
++// Whether a `width` x `height` canvas or drawing buffer reads back as drawn.
++CORE_EXPORT bool Exempt(int width, int height);
++
++// Perturbs all of `surface` in place. A no-op unless Enabled(). The caller
++// decides the size exemption.
+ CORE_EXPORT void Apply(const Surface& surface);
+ 
++// Perturbs the pixels of `surface` inside [left, right) x [top, bottom), with
++// the pixels around them deciding the keys at its edges.
++CORE_EXPORT void ApplyInside(const Surface& surface,
++                             int32_t left,
++                             int32_t top,
++                             int32_t right,
++                             int32_t bottom);
++
+ // Perturbs a Skia pixmap in place, taking the channel layout from its
+-// SkImageInfo. A no-op unless Enabled(), and a no-op for a colour type the
+-// policy does not describe.
++// SkImageInfo. A no-op unless Enabled(), for a pixmap under the size
++// exemption, and for a colour type the policy does not describe.
+ CORE_EXPORT void ApplyToPixmap(const SkPixmap& pixmap);
+ 
+ // Returns a perturbed CPU copy of a canvas snapshot that is about to be
+-// encoded or copied out, or `snapshot` itself when the policy is off. The
+-// snapshot is never written to, so the canvas keeps a clean backing store and
+-// the result is perturbed exactly once.
++// encoded or copied out, or `snapshot` itself when the policy is off or the
++// canvas holds nothing `drawn`. The snapshot is never written to, so the
++// canvas keeps a clean backing store and the result is perturbed exactly once.
+ CORE_EXPORT scoped_refptr<StaticBitmapImage> ApplyToSnapshot(
+-    scoped_refptr<StaticBitmapImage> snapshot);
++    scoped_refptr<StaticBitmapImage> snapshot,
++    bool drawn);
+ 
+ // `image.readPixels(dst)`, with the policy applied to the pixels the image
+-// holds rather than to the converted result. Returns what readPixels returns.
+-//
+-// The difference matters only where the destination is straight alpha and the
+-// image is premultiplied, which is exactly `getImageData`. Perturbing after
+-// the conversion would mean the policy had to reproduce that conversion to
+-// keep an encoded snapshot of the same canvas in step with it, and a
+-// disagreement of one in the reproduced value changes the KEY rather than the
+-// answer -- so one route steps a pixel the other leaves alone. Perturbing
+-// before it leaves the conversion to Skia on both routes, which is exact by
+-// construction and stays exact when Skia's rounding changes.
++// holds rather than to the converted result, unless the canvas holds nothing
++// `drawn`. Returns what readPixels returns.
+ CORE_EXPORT bool ReadPixelsForPage(const cc::PaintImage& image,
+                                    const SkPixmap& dst,
+                                    int src_x,
+-                                   int src_y);
++                                   int src_y,
++                                   bool drawn);
+ 
+ }  // namespace apostate_readback_noise
+ 
+diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
+index 5d240af..bd30221 100644
+--- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
++++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
+@@ -187,6 +187,11 @@ class CORE_EXPORT CanvasRenderingContext
+     NOTREACHED();
+   }
+   virtual bool IsPaintable() const = 0;
++  // Apostate: whether a readback of this context's canvas carries the
++  // --fingerprint-noise policy. A 2D context answers whether anything the
++  // renderer rasterised was drawn; pixels the page wrote itself read back
++  // exactly.
++  virtual bool ApostateReadbackNoised() const { return true; }
+   void DidDraw(CanvasPerformanceMonitor::DrawType draw_type) {
+     const CanvasRenderingContextHost* const host = Host();
+     return DidDraw(host ? gfx::Rect(host->Size()) : gfx::Rect(), draw_type);
+diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+index 49a6c2e..485cb4e 100644
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+@@ -1428,7 +1428,9 @@ String HTMLCanvasElement::ToDataURLInternal(
+     // about to be encoded, on a copy, so the canvas keeps a clean backing
+     // store and this route agrees pixel for pixel with getImageData.
+     image_bitmap =
+-        apostate_readback_noise::ApplyToSnapshot(std::move(image_bitmap));
++        apostate_readback_noise::ApplyToSnapshot(
++            std::move(image_bitmap),
++            !context_ || context_->ApostateReadbackNoised());
+     std::unique_ptr<ImageDataBuffer> data_buffer =
+         ImageDataBuffer::Create(image_bitmap);
+     if (!data_buffer)
+@@ -1534,7 +1536,9 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
+   scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(kBackBuffer);
+   if (image_bitmap) {
+     image_bitmap =
+-        apostate_readback_noise::ApplyToSnapshot(std::move(image_bitmap));
++        apostate_readback_noise::ApplyToSnapshot(
++            std::move(image_bitmap),
++            !context_ || context_->ApostateReadbackNoised());
+     auto* options = ImageEncodeOptions::Create();
+     options->setType(ImageEncoderUtils::MimeTypeName(encoding_mime_type));
+     async_creator = MakeGarbageCollected<CanvasAsyncBlobCreator>(
+diff --git a/third_party/blink/renderer/core/imagebitmap/image_bitmap.cc b/third_party/blink/renderer/core/imagebitmap/image_bitmap.cc
+index a20642c..d88a129 100644
+--- a/third_party/blink/renderer/core/imagebitmap/image_bitmap.cc
++++ b/third_party/blink/renderer/core/imagebitmap/image_bitmap.cc
+@@ -24,6 +24,7 @@
+ #include "third_party/blink/renderer/bindings/core/v8/v8_throw_dom_exception.h"
+ #include "third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h"
+ #include "third_party/blink/renderer/core/dom/dom_exception.h"
++#include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
+ #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
+ #include "third_party/blink/renderer/core/html/canvas/image_data.h"
+ #include "third_party/blink/renderer/core/html/canvas/image_element_base.h"
+@@ -387,8 +388,12 @@ ImageBitmap::ImageBitmap(HTMLCanvasElement* canvas,
+   image_->SetOriginClean(canvas->OriginClean());
+   // Apostate: a bitmap cropped out of a canvas is still canvas output, so the
+   // provenance travels with it. The crop/scale itself is an intermediate and
+-  // is not perturbed, or the byte copy below would apply the policy twice.
+-  image_->SetApostateCanvasReadback();
++  // is not perturbed, or the byte copy below would apply the policy twice. A
++  // canvas holding only what the page wrote is no such output.
++  if (!canvas->RenderingContext() ||
++      canvas->RenderingContext()->ApostateReadbackNoised()) {
++    image_->SetApostateCanvasReadback();
++  }
+   UpdateImageBitmapMemoryUsage();
+ }
+ 
+@@ -413,7 +418,10 @@ ImageBitmap::ImageBitmap(OffscreenCanvas* offscreen_canvas,
+   if (!image_)
+     return;
+   image_->SetOriginClean(offscreen_canvas->OriginClean());
+-  image_->SetApostateCanvasReadback();
++  if (!offscreen_canvas->RenderingContext() ||
++      offscreen_canvas->RenderingContext()->ApostateReadbackNoised()) {
++    image_->SetApostateCanvasReadback();
++  }
+   UpdateImageBitmapMemoryUsage();
+ }
+ 
+diff --git a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+index 36c1663..0f5ffbf 100644
+--- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
++++ b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+@@ -390,7 +390,10 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
+     // own output, and perturbing here as well would apply the policy twice.
+     // What it carries instead is the fact that it came out of a canvas, so
+     // that a byte copy taken out of it later is treated as the readback it is.
+-    bitmap->SetApostateCanvasReadback();
++    // A canvas holding only what the page wrote is no such readback.
++    if (context_->ApostateReadbackNoised()) {
++      bitmap->SetApostateCanvasReadback();
++    }
+   }
+ 
+   return image;
+@@ -576,7 +579,8 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
+     // Apostate: same boundary as HTMLCanvasElement::toBlob -- a perturbed copy
+     // goes to the encoder and the canvas keeps its own pixels.
+     image_bitmap =
+-        apostate_readback_noise::ApplyToSnapshot(std::move(image_bitmap));
++        apostate_readback_noise::ApplyToSnapshot(
++            std::move(image_bitmap), context_->ApostateReadbackNoised());
+     auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<Blob>>(
+         script_state, exception_state.GetContext());
+     CanvasAsyncBlobCreator::ToBlobFunctionType function_type =
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+index 67d3c8f..13a599a 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+@@ -511,14 +511,15 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+     // and with it on it perturbs the pixels the canvas HOLDS and then lets
+     // Skia unpremultiply, rather than perturbing the straight-alpha result.
+     // An encoded snapshot of the same canvas is perturbed at the same point
+-    // and unpremultiplied by the same code, so the two agree; doing it the
+-    // other way round made them disagree, measured. Covers the HTML and the
+-    // offscreen 2D context, every ImageData pixel format and both raster
+-    // backends, because all of them arrive here.
++    // and unpremultiplied by the same code, so the two agree. Covers the HTML
++    // and the offscreen 2D context, every ImageData pixel format and both
++    // raster backends, because all of them arrive here. A canvas holding only
++    // what the page wrote reads back exactly.
+     SkPixmap image_data_pixmap = image_data->GetSkPixmap();
+     const bool read_pixels_successful =
+         apostate_readback_noise::ReadPixelsForPage(
+-            snapshot->PaintImageForCurrentFrame(), image_data_pixmap, sx, sy);
++            snapshot->PaintImageForCurrentFrame(), image_data_pixmap, sx, sy,
++            ApostateDrawn());
+     if (!read_pixels_successful) {
+       SkIRect bounds =
+           snapshot->PaintImageForCurrentFrame().GetSkImageInfo().bounds();
+@@ -596,6 +597,11 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
+ 
+   gfx::Rect source_rect = dest_rect;
+   source_rect.Offset(-dest_offset);
++  // Apostate: the page's own pixels over the whole canvas leave nothing the
++  // renderer drew (ApostateDrawn()).
++  if (dest_rect == gfx::Rect(0, 0, Width(), Height())) {
++    apostate_drawn_ = false;
++  }
+ 
+   SkPixmap data_pixmap = data->GetSkPixmap();
+ 
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
+index 5d6224e..a6b36b5 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
+@@ -831,6 +831,7 @@ void Canvas2DRecorderContext::ResetInternal() {
+   state_stack_.resize(1);
+   state_stack_.front() = MakeGarbageCollected<CanvasRenderingContext2DState>();
+   layer_count_ = 0;
++  apostate_drawn_ = false;
+   SetIsTransformInvertible(true);
+ 
+   CanvasPath::Clear();
+@@ -1749,6 +1750,27 @@ void Canvas2DRecorderContext::fillRect(double x,
+   CanvasRenderingContext::AdjustRectForCanvas(x, y, width, height);
+   gfx::RectF rect(ClampTo<float>(x), ClampTo<float>(y), ClampTo<float>(width),
+                   ClampTo<float>(height));
++  // Apostate: an opaque solid colour on whole pixels, with nothing blended,
++  // shadowed, filtered or clipped, comes out the same on every machine, so it
++  // does not count as drawn (ApostateDrawn()).
++  const bool drawn_before = apostate_drawn_;
++  const AffineTransform& transform = GetTransform();
++  const cc::PaintFlags* fill_flags = state.GetFlags(
++      CanvasRenderingContext2DState::kFillPaintType, kDrawForegroundOnly,
++      CanvasRenderingContext2DState::kNoImage);
++  const bool exact =
++      layer_count_ == 0 && !has_pattern && fill_flags &&
++      !fill_flags->getShader() &&
++      fill_flags->getAlphaf() == 1.0f &&
++      (state.GlobalComposite() == SkBlendMode::kSrcOver ||
++       state.GlobalComposite() == SkBlendMode::kSrc) &&
++      !state.ShouldDrawShadows() && !state.HasClip() &&
++      !state.IsFilterUnresolved() && !state.IsFilterResolved() &&
++      transform.IsIdentityOrTranslation() &&
++      transform.E() == std::floor(transform.E()) &&
++      transform.F() == std::floor(transform.F()) &&
++      x == std::floor(x) && y == std::floor(y) &&
++      width == std::floor(width) && height == std::floor(height);
+   Draw<OverdrawOp::kNone>(
+       /*draw_func=*/
+       [rect](MemoryManagedPaintCanvas* c, const cc::PaintFlags* flags) {
+@@ -1759,6 +1781,9 @@ void Canvas2DRecorderContext::fillRect(double x,
+       has_pattern ? CanvasRenderingContext2DState::kNonOpaqueImage
+                   : CanvasRenderingContext2DState::kNoImage,
+       CanvasPerformanceMonitor::DrawType::kRectangle);
++  if (exact) {
++    apostate_drawn_ = drawn_before;
++  }
+ }
+ 
+ static void StrokeRectOnCanvas(const gfx::RectF& rect,
+@@ -1981,6 +2006,11 @@ void Canvas2DRecorderContext::clearRect(double x,
+       host->ClearRenderedText(canvas_clear_rect);
+     }
+   }
++  // Apostate: a clear of the whole canvas leaves nothing drawn.
++  if (!GetState().HasClip() && GetTransform().MapRect(rect).Contains(
++                                   gfx::RectF(0, 0, Width(), Height()))) {
++    apostate_drawn_ = false;
++  }
+   if (RectContainsTransformedRect(rect, clip_bounds)) {
+     CheckOverdraw(&clear_flags, CanvasRenderingContext2DState::kNoImage,
+                   OverdrawOp::kClearRect);
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
+index 739a7a7..945ba48 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
+@@ -177,6 +177,11 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+   // draw the bitmap.
+   void endLayer(ExceptionState& exception_state);
+   int LayerCount() const { return layer_count_; }
++  // Apostate: whether anything the renderer rasterised -- text, a path, an
++  // image, a gradient, a shadow or an anti-aliased rectangle -- was drawn
++  // since the canvas was last reset. A canvas holding only what the page
++  // wrote itself reads back exactly under --fingerprint-noise.
++  bool ApostateDrawn() const { return apostate_drawn_; }
+   virtual void reset();          // Called by the javascript interface
+   virtual void ResetInternal();  // Called from within blink
+ 
+@@ -439,6 +444,8 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+   unsigned max_state_stack_depth_ = 1;
+   // Counts how many states have been pushed with BeginLayer.
+   int layer_count_ = 0;
++  // See ApostateDrawn().
++  bool apostate_drawn_ = false;
+   AntiAliasingMode clip_antialiasing_ = kNotAntiAliased;
+   // The paint worklet canvas operates on CSS pixels, and that's different than
+   // the HTML canvas which operates on physical pixels. In other words, the
+@@ -863,6 +870,7 @@ void Canvas2DRecorderContext::Draw(
+   if (!paint_canvas || !paint_canvas->getDeviceClipBounds(&clip_bounds)) {
+     return;
+   }
++  apostate_drawn_ = true;
+ 
+   if (GetState().IsFilterUnresolved()) [[unlikely]] {
+     // Resolving a filter requires allocating garbage-collected objects.
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h
+index 57940e6..cfa0ac9 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h
+@@ -226,6 +226,7 @@ class MODULES_EXPORT CanvasRenderingContext2D final
+   ExecutionContext* GetTopExecutionContext() const override;
+ 
+   bool IsPaintable() const final;
++  bool ApostateReadbackNoised() const override { return ApostateDrawn(); }
+   bool IsHibernating() const final;
+ 
+   void WillDrawImage(CanvasImageSource*, bool image_is_texture_backed) final;
+diff --git a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
+index fef2c73..b4df000 100644
+--- a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
++++ b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
+@@ -151,6 +151,7 @@ class MODULES_EXPORT OffscreenCanvasRenderingContext2D final
+   void FinalizeFrame(FlushReason) final;
+ 
+   bool IsPaintable() const final;
++  bool ApostateReadbackNoised() const override { return ApostateDrawn(); }
+ 
+   scoped_refptr<CanvasResource> ProduceCanvasResource(FlushReason);
+ 
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_readback_noise.cc b/third_party/blink/renderer/modules/webgl/webgl_readback_noise.cc
+index 0235130..ebabffb 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_readback_noise.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_readback_noise.cc
+@@ -5,8 +5,12 @@
+ #include "third_party/blink/renderer/modules/webgl/webgl_readback_noise.h"
+ 
+ #include <optional>
++#include <vector>
+ 
++#include "base/numerics/checked_math.h"
++#include "gpu/command_buffer/client/gles2_interface.h"
+ #include "third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h"
++#include "third_party/khronos/GLES3/gl3.h"
+ 
+ namespace blink {
+ 
+@@ -203,6 +207,90 @@ void ApostateNoiseReadbackPixels(
+                                  geometry.row_stride, format, type);
+ }
+ 
++void ApostateNoiseReadbackRGBA8(
++    gpu::gles2::GLES2Interface* gl,
++    GLint x,
++    GLint y,
++    GLsizei width,
++    GLsizei height,
++    base::span<uint8_t> destination,
++    const WebGLImageConversion::PixelStoreParams& pack,
++    bool premultiplied) {
++  if (!apostate_readback_noise::Enabled() || !gl || width <= 0 ||
++      height <= 0) {
++    return;
++  }
++  ApostateReadbackGeometry geometry;
++  if (!ApostateReadbackGeometryFor(GL_RGBA, GL_UNSIGNED_BYTE, width, pack,
++                                   &geometry)) {
++    return;
++  }
++  base::CheckedNumeric<size_t> needed = geometry.row_stride;
++  needed *= static_cast<size_t>(height - 1);
++  needed += static_cast<size_t>(width) * 4;
++  needed += geometry.skip_bytes;
++  // The rectangle again, one pixel wider on every side, in tight rows. A
++  // pixel outside the framebuffer stays transparent black.
++  const base::CheckedNumeric<GLsizei> wide = base::CheckAdd(width, 2);
++  const base::CheckedNumeric<GLsizei> tall = base::CheckAdd(height, 2);
++  base::CheckedNumeric<size_t> bytes = wide.Cast<size_t>();
++  bytes *= tall.Cast<size_t>();
++  bytes *= 4;
++  if (!needed.IsValid() || needed.ValueOrDie() > destination.size() ||
++      !wide.IsValid() || !tall.IsValid() || !bytes.IsValid()) {
++    return;
++  }
++  std::vector<uint8_t> clean(bytes.ValueOrDie(), 0);
++  // The page's own pack state is put back afterwards. Only state the page
++  // changed is touched, so a WebGL 1 context never sees a WebGL 2 enum.
++  if (pack.alignment > 4) {
++    gl->PixelStorei(GL_PACK_ALIGNMENT, 4);
++  }
++  if (pack.row_length > 0) {
++    gl->PixelStorei(GL_PACK_ROW_LENGTH, 0);
++  }
++  if (pack.skip_pixels > 0) {
++    gl->PixelStorei(GL_PACK_SKIP_PIXELS, 0);
++  }
++  if (pack.skip_rows > 0) {
++    gl->PixelStorei(GL_PACK_SKIP_ROWS, 0);
++  }
++  gl->ReadPixels(x - 1, y - 1, wide.ValueOrDie(), tall.ValueOrDie(), GL_RGBA,
++                 GL_UNSIGNED_BYTE, clean.data());
++  if (pack.alignment > 4) {
++    gl->PixelStorei(GL_PACK_ALIGNMENT, pack.alignment);
++  }
++  if (pack.row_length > 0) {
++    gl->PixelStorei(GL_PACK_ROW_LENGTH, pack.row_length);
++  }
++  if (pack.skip_pixels > 0) {
++    gl->PixelStorei(GL_PACK_SKIP_PIXELS, pack.skip_pixels);
++  }
++  if (pack.skip_rows > 0) {
++    gl->PixelStorei(GL_PACK_SKIP_ROWS, pack.skip_rows);
++  }
++
++  const size_t wide_row = static_cast<size_t>(wide.ValueOrDie()) * 4;
++  Surface surface;
++  surface.bytes = base::span(clean);
++  surface.width = wide.ValueOrDie();
++  surface.height = tall.ValueOrDie();
++  surface.row_stride = wide_row;
++  surface.pixel_stride = 4;
++  surface.channels.storage = Storage::kUint8;
++  surface.channels.premultiplied = premultiplied;
++  apostate_readback_noise::ApplyInside(surface, 1, 1, width + 1, height + 1);
++  const size_t row_bytes = static_cast<size_t>(width) * 4;
++  for (GLsizei row = 0; row < height; ++row) {
++    destination
++        .subspan(geometry.skip_bytes +
++                     static_cast<size_t>(row) * geometry.row_stride,
++                 row_bytes)
++        .copy_from(base::span(clean).subspan(
++            (static_cast<size_t>(row) + 1) * wide_row + 4, row_bytes));
++  }
++}
++
+ void ApostateNoiseReadbackRectangle(base::span<uint8_t> rectangle,
+                                     GLsizei width,
+                                     GLsizei height,
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_readback_noise.h b/third_party/blink/renderer/modules/webgl/webgl_readback_noise.h
+index 2a418b8..23a9afd 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_readback_noise.h
++++ b/third_party/blink/renderer/modules/webgl/webgl_readback_noise.h
+@@ -12,6 +12,10 @@
+ #include "third_party/blink/renderer/platform/graphics/gpu/webgl_image_conversion.h"
+ #include "third_party/khronos/GLES2/gl2ext.h"
+ 
++namespace gpu::gles2 {
++class GLES2Interface;
++}  // namespace gpu::gles2
++
+ namespace blink {
+ 
+ // Apostate: the GL half of the --fingerprint-noise readback policy. GL is
+@@ -53,6 +57,22 @@ MODULES_EXPORT void ApostateNoiseReadbackPixels(
+     GLenum type,
+     const WebGLImageConversion::PixelStoreParams& pack);
+ 
++// Perturbs an RGBA / UNSIGNED_BYTE readback of the `width` x `height`
++// rectangle at (`x`, `y`) that `gl` just packed into `destination` under
++// `pack`. The pixels around the rectangle decide the keys at its edges, as
++// for a read of the whole framebuffer and for its toDataURL: they are read
++// again, with the rectangle, through `gl` while the same framebuffer is bound.
++// `premultiplied` says the drawing buffer is composited as premultiplied.
++MODULES_EXPORT void ApostateNoiseReadbackRGBA8(
++    gpu::gles2::GLES2Interface* gl,
++    GLint x,
++    GLint y,
++    GLsizei width,
++    GLsizei height,
++    base::span<uint8_t> destination,
++    const WebGLImageConversion::PixelStoreParams& pack,
++    bool premultiplied);
++
+ // Perturbs a rectangle whose geometry is already known: the pixel-pack buffer
+ // route, which recorded it when readPixels wrote the buffer. `rectangle`
+ // begins at pixel (0, 0).
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+index baa2351..6bcc628 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -80,6 +80,7 @@
+ #include "third_party/blink/renderer/bindings/core/v8/v8_union_htmlcanvaselement_offscreencanvas.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_webgl_copy_element_image_config.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/webgl_any.h"
++#include "third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+@@ -5457,20 +5458,35 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+   if (isContextLost() || !GetDrawingBuffer())
+     return;
+ 
++  // Apostate: the destination view is what the page reads, so the opt-in
++  // policy is applied to it and the drawing buffer is left exactly as it was
++  // rendered. Format, type and the whole pack state are honoured -- the
++  // rectangle is walked where GL put it, not where an RGBA8 shortcut would
++  // assume it is. A drawing buffer under 16 pixels on a side reads back as
++  // drawn, as its toDataURL does, and an RGBA8 read keys its edge pixels on
++  // the framebuffer around it, so it agrees with a read of all of it.
++  const bool apostate_noise =
++      width > 0 && height > 0 && data &&
++      (framebuffer || !apostate_readback_noise::Exempt(
++                          GetDrawingBuffer()->Size().width(),
++                          GetDrawingBuffer()->Size().height()));
++  const bool apostate_rgba8 = format == GL_RGBA && type == GL_UNSIGNED_BYTE;
+   {
+     ScopedDrawingBufferBinder binder(GetDrawingBuffer(), framebuffer);
+     if (!binder.Succeeded()) {
+       return;
+     }
+     ContextGL()->ReadPixels(x, y, width, height, format, type, data);
++    if (apostate_noise && apostate_rgba8) {
++      ApostateNoiseReadbackRGBA8(
++          ContextGL(), x, y, width, height,
++          pixels->ByteSpanMaybeShared().subspan(offset_in_bytes.ValueOrDie()),
++          GetPackPixelStoreParams(),
++          !framebuffer && CreationAttributes().premultiplied_alpha);
++    }
+   }
+ 
+-  // Apostate: the destination view is what the page reads, so the opt-in
+-  // policy is applied to it and the drawing buffer is left exactly as it was
+-  // rendered. Format, type and the whole pack state are honoured -- the
+-  // rectangle is walked where GL put it, not where an RGBA8 shortcut would
+-  // assume it is.
+-  if (width > 0 && height > 0 && data) {
++  if (apostate_noise && !apostate_rgba8) {
+     ApostateNoiseReadbackPixels(
+         pixels->ByteSpanMaybeShared().subspan(offset_in_bytes.ValueOrDie()),
+         width, height, format, type, GetPackPixelStoreParams());
