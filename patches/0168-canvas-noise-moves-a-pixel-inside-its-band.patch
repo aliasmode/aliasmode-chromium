@@ -1125,7 +1125,7 @@ index fef2c73..b4df000 100644
    scoped_refptr<CanvasResource> ProduceCanvasResource(FlushReason);
  
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_readback_noise.cc b/third_party/blink/renderer/modules/webgl/webgl_readback_noise.cc
-index 0235130..ebabffb 100644
+index 0235130..774f0df 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_readback_noise.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_readback_noise.cc
 @@ -5,8 +5,12 @@
@@ -1141,7 +1141,7 @@ index 0235130..ebabffb 100644
  
  namespace blink {
  
-@@ -203,6 +207,90 @@ void ApostateNoiseReadbackPixels(
+@@ -203,6 +207,91 @@ void ApostateNoiseReadbackPixels(
                                   geometry.row_stride, format, type);
  }
  
@@ -1169,16 +1169,17 @@ index 0235130..ebabffb 100644
 +  needed += geometry.skip_bytes;
 +  // The rectangle again, one pixel wider on every side, in tight rows. A
 +  // pixel outside the framebuffer stays transparent black.
-+  const base::CheckedNumeric<GLsizei> wide = base::CheckAdd(width, 2);
-+  const base::CheckedNumeric<GLsizei> tall = base::CheckAdd(height, 2);
-+  base::CheckedNumeric<size_t> bytes = wide.Cast<size_t>();
-+  bytes *= tall.Cast<size_t>();
-+  bytes *= 4;
-+  if (!needed.IsValid() || needed.ValueOrDie() > destination.size() ||
-+      !wide.IsValid() || !tall.IsValid() || !bytes.IsValid()) {
++  GLsizei wide = 0;
++  GLsizei tall = 0;
++  size_t bytes = 0;
++  if (!base::CheckAdd(width, 2).AssignIfValid(&wide) ||
++      !base::CheckAdd(height, 2).AssignIfValid(&tall) ||
++      !base::CheckMul(static_cast<size_t>(wide), static_cast<size_t>(tall), 4)
++           .AssignIfValid(&bytes) ||
++      !needed.IsValid() || needed.ValueOrDie() > destination.size()) {
 +    return;
 +  }
-+  std::vector<uint8_t> clean(bytes.ValueOrDie(), 0);
++  std::vector<uint8_t> clean(bytes, 0);
 +  // The page's own pack state is put back afterwards. Only state the page
 +  // changed is touched, so a WebGL 1 context never sees a WebGL 2 enum.
 +  if (pack.alignment > 4) {
@@ -1193,8 +1194,8 @@ index 0235130..ebabffb 100644
 +  if (pack.skip_rows > 0) {
 +    gl->PixelStorei(GL_PACK_SKIP_ROWS, 0);
 +  }
-+  gl->ReadPixels(x - 1, y - 1, wide.ValueOrDie(), tall.ValueOrDie(), GL_RGBA,
-+                 GL_UNSIGNED_BYTE, clean.data());
++  gl->ReadPixels(x - 1, y - 1, wide, tall, GL_RGBA, GL_UNSIGNED_BYTE,
++                 clean.data());
 +  if (pack.alignment > 4) {
 +    gl->PixelStorei(GL_PACK_ALIGNMENT, pack.alignment);
 +  }
@@ -1208,11 +1209,11 @@ index 0235130..ebabffb 100644
 +    gl->PixelStorei(GL_PACK_SKIP_ROWS, pack.skip_rows);
 +  }
 +
-+  const size_t wide_row = static_cast<size_t>(wide.ValueOrDie()) * 4;
++  const size_t wide_row = static_cast<size_t>(wide) * 4;
 +  Surface surface;
 +  surface.bytes = base::span(clean);
-+  surface.width = wide.ValueOrDie();
-+  surface.height = tall.ValueOrDie();
++  surface.width = wide;
++  surface.height = tall;
 +  surface.row_stride = wide_row;
 +  surface.pixel_stride = 4;
 +  surface.channels.storage = Storage::kUint8;
