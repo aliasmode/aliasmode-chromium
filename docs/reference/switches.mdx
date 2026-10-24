@@ -216,7 +216,7 @@ An IANA timezone name, such as `Europe/Berlin`. `Intl`, `Date` and the timezone 
 
 ### `--fingerprint-webrtc-ip`
 
-An IP address shown as the public address in the ICE candidates, in place of the real address. An mDNS name stays. The browser does not check the value. Where UDP can be used, packets still leave from the real socket, so a peer can read the real source address off the packets it receives. Where no UDP socket can be opened, such as behind an HTTP proxy, with `--fingerprint-webrtc-udp=block` or under the `disable_non_proxied_udp` policy, the browser gathers a server-reflexive candidate with this address and sends nothing. The candidate comes one round trip through the proxy after the request, as the browser timed it loading the page. See [WebRTC](/guides/webrtc#the-switches).
+An IP address shown as the public address in the ICE candidates, in place of the real address. An mDNS name stays. The browser does not check the value. Where UDP can be used, packets still leave from the real socket, so a peer can read the real source address off the packets it receives. Where no UDP socket can be opened, such as behind an HTTP proxy, with `--fingerprint-webrtc-udp=block` or under the `disable_non_proxied_udp` policy, the browser gathers a server-reflexive candidate with this address and sends nothing. The candidate comes one round trip through the proxy after the request: the longest TLS handshake the page and its subresources made through the proxy. See [WebRTC](/guides/webrtc#the-switches).
 
 Behind a proxy, the Node package passes the exit address from its GeoIP lookup as this switch. The Python package does not.
 

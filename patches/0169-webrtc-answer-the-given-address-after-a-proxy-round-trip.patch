@@ -6,21 +6,72 @@ cannot hear from a STUN server sooner than a round trip through the
 proxy, and WHOX measured the answer faster than its own TCP round trip
 to that address.
 
-The renderer now passes the allocator the round trip the browser already
-timed loading the frame's document, or the nearest ancestor document in
-its process: the TLS handshake or the wait for the response headers,
-whichever was shorter, both made through the proxy. The synthetic STUN
-answer comes after that round trip, capped at a second, plus up to a
-sixteenth of it as jitter; without a timed load, after 90 to 160 ms.
-Candidates keep their order and gathering still completes after the
-server-reflexive candidate. Nothing new is sent: no UDP leaves the
-machine and no request is made to time the proxy.
+The renderer now passes the allocator the longest round trip the browser
+already timed for the frame and its ancestor documents in its process:
+the TLS handshake of each connection their document and subresource
+loads opened through the proxy, which is one round trip to that server
+with no server time in it. A detector's STUN server is one of the page's
+servers or nearer. Without a handshake, the document's wait for its
+response headers counts. The synthetic STUN answer comes after that
+round trip, capped at a second, plus up to a sixteenth of it as jitter;
+without any timed load, after 90 to 160 ms. Candidates keep their order
+and gathering still completes after the server-reflexive candidate.
+Nothing new is sent: no UDP leaves the machine and no request is made to
+time the proxy.
 
+diff --git a/third_party/blink/renderer/core/timing/performance_resource_timing.cc b/third_party/blink/renderer/core/timing/performance_resource_timing.cc
+index 4809ecc..cb8c225 100644
+--- a/third_party/blink/renderer/core/timing/performance_resource_timing.cc
++++ b/third_party/blink/renderer/core/timing/performance_resource_timing.cc
+@@ -401,6 +401,18 @@ DOMHighResTimeStamp PerformanceResourceTiming::connectEnd() const {
+       info_->allow_negative_values, CrossOriginIsolatedCapability());
+ }
+ 
++std::optional<base::TimeDelta> PerformanceResourceTiming::ApostateTlsHandshake()
++    const {
++  if (!info_->timing || !info_->timing->connect_timing ||
++      info_->timing->connect_timing->ssl_start.is_null() ||
++      info_->timing->connect_timing->ssl_end <=
++          info_->timing->connect_timing->ssl_start) {
++    return std::nullopt;
++  }
++  return info_->timing->connect_timing->ssl_end -
++         info_->timing->connect_timing->ssl_start;
++}
++
+ DOMHighResTimeStamp PerformanceResourceTiming::secureConnectionStart() const {
+   if (!info_->allow_timing_details || !info_->is_secure_transport) {
+     return 0.0;
+diff --git a/third_party/blink/renderer/core/timing/performance_resource_timing.h b/third_party/blink/renderer/core/timing/performance_resource_timing.h
+index 28dab16..05be2e6 100644
+--- a/third_party/blink/renderer/core/timing/performance_resource_timing.h
++++ b/third_party/blink/renderer/core/timing/performance_resource_timing.h
+@@ -32,6 +32,8 @@
+ #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_TIMING_PERFORMANCE_RESOURCE_TIMING_H_
+ #define THIRD_PARTY_BLINK_RENDERER_CORE_TIMING_PERFORMANCE_RESOURCE_TIMING_H_
+ 
++#include <optional>
++
+ #include "base/time/time.h"
+ #include "third_party/blink/public/mojom/timing/performance_mark_or_measure.mojom-blink-forward.h"
+ #include "third_party/blink/public/mojom/timing/resource_timing.mojom-blink-forward.h"
+@@ -111,6 +113,11 @@ class CORE_EXPORT PerformanceResourceTiming : public PerformanceEntry {
+ 
+   bool AllowNegativeValues() const { return info_->allow_negative_values; }
+ 
++  // Apostate: how long the TLS handshake of the connection this resource
++  // opened took, which is one round trip to its server. Read inside the
++  // renderer only, whatever the page may see of it.
++  std::optional<base::TimeDelta> ApostateTlsHandshake() const;
++
+   static uint64_t GetTransferSize(uint64_t encoded_body_size,
+                                   mojom::blink::CacheState cache_state);
+ 
 diff --git a/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc b/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
-index 921fac2..1aee24f 100644
+index 921fac2..82035a8 100644
 --- a/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
 +++ b/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
-@@ -59,7 +59,11 @@
+@@ -59,9 +59,17 @@
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
  #include "third_party/blink/renderer/core/frame/policy_container.h"
@@ -30,9 +81,15 @@ index 921fac2..1aee24f 100644
  #include "third_party/blink/renderer/core/page/chrome_client.h"
 +#include "third_party/blink/renderer/core/page/frame_tree.h"
  #include "third_party/blink/renderer/core/page/page.h"
++#include "third_party/blink/renderer/core/performance_entry_names.h"
  #include "third_party/blink/renderer/core/probe/core_probes.h"
++#include "third_party/blink/renderer/core/timing/dom_window_performance.h"
++#include "third_party/blink/renderer/core/timing/performance_resource_timing.h"
++#include "third_party/blink/renderer/core/timing/window_performance.h"
  #include "third_party/blink/renderer/modules/mediastream/media_constraints.h"
-@@ -71,6 +75,7 @@
+ #include "third_party/blink/renderer/modules/peerconnection/adapters/web_rtc_cross_thread_copier.h"
+ #include "third_party/blink/renderer/modules/peerconnection/rtc_error_util.h"
+@@ -71,6 +79,7 @@
  #include "third_party/blink/renderer/platform/graphics/video_frame_sink_bundle.h"
  #include "third_party/blink/renderer/platform/heap/cross_thread_persistent.h"
  #include "third_party/blink/renderer/platform/heap/persistent.h"
@@ -40,17 +97,27 @@ index 921fac2..1aee24f 100644
  #include "third_party/blink/renderer/platform/mediastream/webrtc_uma_histograms.h"
  #include "third_party/blink/renderer/platform/mojo/mojo_binding_context.h"
  #include "third_party/blink/renderer/platform/p2p/empty_network_manager.h"
-@@ -1007,6 +1012,46 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
+@@ -1007,6 +1016,57 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
    }
  }
  
 +namespace {
 +
-+// Apostate: a round trip through the proxy to a server, as the browser timed
-+// it loading the frame's document or the nearest ancestor document in this
-+// process: its TLS handshake or its wait for the response headers, whichever
-+// was shorter. Each takes at least one round trip through the proxy.
++// Apostate: the longest round trip through the proxy the browser has timed for
++// this frame and its ancestor documents in this process: the TLS handshake of
++// each connection their document and subresource loads opened, which is one
++// round trip to that server with no server time in it. A STUN server a page
++// names is one of its servers or nearer, so a binding request answered for
++// --fingerprint-webrtc-ip never comes back sooner than it could. Without a
++// handshake, the document's wait for its response headers.
 +std::optional<base::TimeDelta> DocumentRoundTrip(WebLocalFrame* web_frame) {
++  std::optional<base::TimeDelta> longest;
++  std::optional<base::TimeDelta> headers_wait;
++  const auto consider = [&longest](std::optional<base::TimeDelta> handshake) {
++    if (handshake && (!longest || *handshake > *longest)) {
++      longest = handshake;
++    }
++  };
 +  for (Frame* frame = To<WebLocalFrameImpl>(web_frame)->GetFrame(); frame;
 +       frame = frame->Tree().Parent()) {
 +    auto* local_frame = DynamicTo<LocalFrame>(frame);
@@ -58,28 +125,29 @@ index 921fac2..1aee24f 100644
 +      break;
 +    }
 +    DocumentLoader* loader = local_frame->Loader().GetDocumentLoader();
-+    const ResourceLoadTiming* timing =
-+        loader ? loader->GetResponse().GetResourceLoadTiming() : nullptr;
-+    if (!timing) {
-+      continue;
-+    }
-+    std::optional<base::TimeDelta> round_trip;
-+    if (!timing->SslStart().is_null() && timing->SslEnd() > timing->SslStart()) {
-+      round_trip = timing->SslEnd() - timing->SslStart();
-+    }
-+    if (!timing->SendEnd().is_null() &&
-+        timing->ReceiveHeadersStart() > timing->SendEnd()) {
-+      const base::TimeDelta wait =
-+          timing->ReceiveHeadersStart() - timing->SendEnd();
-+      if (!round_trip || wait < *round_trip) {
-+        round_trip = wait;
++    if (const ResourceLoadTiming* timing =
++            loader ? loader->GetResponse().GetResourceLoadTiming() : nullptr) {
++      if (!timing->SslStart().is_null() &&
++          timing->SslEnd() > timing->SslStart()) {
++        consider(timing->SslEnd() - timing->SslStart());
++      }
++      if (!headers_wait && !timing->SendEnd().is_null() &&
++          timing->ReceiveHeadersStart() > timing->SendEnd()) {
++        headers_wait = timing->ReceiveHeadersStart() - timing->SendEnd();
 +      }
 +    }
-+    if (round_trip) {
-+      return round_trip;
++    if (LocalDOMWindow* window = local_frame->DomWindow()) {
++      for (const auto& entry :
++           DOMWindowPerformance::performance(*window)->getBufferedEntriesByType(
++               performance_entry_names::kResource)) {
++        if (entry->IsResource()) {
++          consider(static_cast<const PerformanceResourceTiming*>(entry.Get())
++                       ->ApostateTlsHandshake());
++        }
++      }
 +    }
 +  }
-+  return std::nullopt;
++  return longest ? longest : headers_wait;
 +}
 +
 +}  // namespace
@@ -87,7 +155,7 @@ index 921fac2..1aee24f 100644
  std::unique_ptr<webrtc::PortAllocator>
  PeerConnectionDependencyFactory::CreatePortAllocator(
      blink::WebLocalFrame* web_frame) {
-@@ -1108,6 +1153,8 @@ PeerConnectionDependencyFactory::CreatePortAllocator(
+@@ -1108,6 +1168,8 @@ PeerConnectionDependencyFactory::CreatePortAllocator(
      port_config.enable_nonproxied_udp = false;
    }
  
