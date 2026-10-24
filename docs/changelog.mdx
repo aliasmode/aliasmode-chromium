@@ -7,7 +7,7 @@ Each release publishes browser archives for Linux x64, Linux arm64, macOS arm64 
 
 ## AliasMode Chromium 155.0.8059.85 build 3
 
-Windows x64 archive only.
+Released 24 October 2026 as [`v155.0.8059.85-aliasmode.3`](https://github.com/aliasmode/aliasmode-chromium/releases/tag/v155.0.8059.85-aliasmode.3). Windows x64 archive only.
 
 - **Languages.** `navigator.languages` lists the whole language list and `Accept-Language` is the last header of a request again, as in Chrome on the stable channel, which does not reduce Accept-Language. Build 2 followed Chrome for Testing, whose field-trial configuration turns the reduction on.
 - **Canvas.** With [`--fingerprint-noise`](/reference/switches#fingerprint-noise), each value of an anti-aliased pixel moves inside a band of values of its profile, so noise applied twice changes nothing. A read written back with `putImageData` reads back unchanged, and a `toDataURL` image decoded and read again equals a direct read; build 2 differed in about 1300 bytes. A 2D canvas that holds only what the page wrote, and any canvas under 16 pixels on a side, reads back exactly, so CreepJS no longer reports "pixel data modified". Alpha-only and rounded hashes still differ per profile.
