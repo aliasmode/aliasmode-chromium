@@ -43,7 +43,7 @@ index 4809ecc..cb8c225 100644
    if (!info_->allow_timing_details || !info_->is_secure_transport) {
      return 0.0;
 diff --git a/third_party/blink/renderer/core/timing/performance_resource_timing.h b/third_party/blink/renderer/core/timing/performance_resource_timing.h
-index 28dab16..05be2e6 100644
+index 28dab16..28ffd34 100644
 --- a/third_party/blink/renderer/core/timing/performance_resource_timing.h
 +++ b/third_party/blink/renderer/core/timing/performance_resource_timing.h
 @@ -32,6 +32,8 @@
@@ -55,17 +55,17 @@ index 28dab16..05be2e6 100644
  #include "base/time/time.h"
  #include "third_party/blink/public/mojom/timing/performance_mark_or_measure.mojom-blink-forward.h"
  #include "third_party/blink/public/mojom/timing/resource_timing.mojom-blink-forward.h"
-@@ -111,6 +113,11 @@ class CORE_EXPORT PerformanceResourceTiming : public PerformanceEntry {
+@@ -101,6 +103,11 @@ class CORE_EXPORT PerformanceResourceTiming : public PerformanceEntry {
  
-   bool AllowNegativeValues() const { return info_->allow_negative_values; }
+   void Trace(Visitor*) const override;
  
 +  // Apostate: how long the TLS handshake of the connection this resource
 +  // opened took, which is one round trip to its server. Read inside the
 +  // renderer only, whatever the page may see of it.
 +  std::optional<base::TimeDelta> ApostateTlsHandshake() const;
 +
-   static uint64_t GetTransferSize(uint64_t encoded_body_size,
-                                   mojom::blink::CacheState cache_state);
+  protected:
+   void BuildJSONValue(V8ObjectBuilder&) const override;
  
 diff --git a/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc b/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
 index 921fac2..82035a8 100644
