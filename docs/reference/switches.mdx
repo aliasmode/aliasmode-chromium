@@ -28,6 +28,7 @@ When the browser refuses a value, it prints `apostate: <reason>` on stderr and e
 | [`--fingerprint-noise`](#fingerprint-noise) | none | off |
 | [`--apostate-profile`](#apostate-profile) | base64-encoded profile JSON | none |
 | [`--aliasmode-window-label`](#aliasmode-window-label) | text | none |
+| [`--aliasmode-keep-alive`](#aliasmode-keep-alive) | none | off |
 
 The Python and Node packages refuse a switch that starts with `--fingerprint` and is not in this table, and a switch within two edits of one in it, such as `--fingeprint-platform`. The browser itself ignores an unknown switch, as Chromium does.
 
@@ -277,6 +278,18 @@ Puts the text in front of the title the operating system shows for every browser
 - Only the native window title changes. `document.title`, the tab strip and the saved session stay as they were, so a page cannot read the label.
 - The browser puts one space between the label and the title, and drops whitespace at the end of the label, which Windows removes from every switch value anyway. A window named with "Name window" shows the label in front of its name.
 - App and DevTools windows keep their own titles.
+
+## Keep alive
+
+### `--aliasmode-keep-alive`
+
+Keeps the browser running after its last window closes, until [`Browser.close`](https://chromedevtools.github.io/devtools-protocol/tot/Browser/#method-close) or the end of the process. A launcher can then still read the profile over the remote debugging connection, for example its cookies with `Storage.getCookies`, when the user closes the last window. Without the switch the browser exits with its last window on Windows and Linux.
+
+- **Default.** Off.
+- **Value.** None. The browser checks only whether the switch is present.
+- Works only with `--remote-debugging-port` or `--remote-debugging-pipe`. Without one of them the switch has no effect, because nothing could close the browser.
+- The browser holds the keep-alive Chromium takes for `--no-startup-window` with remote debugging. Unlike `--no-startup-window`, the startup window opens and `--restore-last-session` restores the last session as usual.
+- With no window open, the browser shows no window and no tray icon. A page cannot tell that the switch is set.
 
 ## Precedence
 
