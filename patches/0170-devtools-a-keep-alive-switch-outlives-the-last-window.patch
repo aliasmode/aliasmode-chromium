@@ -1,0 +1,45 @@
+Subject: [PATCH] devtools: a keep-alive switch outlives the last window
+
+--aliasmode-keep-alive keeps the browser process running after its last
+window closes, with no window and no tray icon, until Browser.close or
+the end of the process. The launcher uses the time to read the profile's
+cookies and storage over the remote debugging connection when the user
+closes the last window, which on Windows and Linux ends the browser.
+
+It takes the keep-alive Chromium already takes for --no-startup-window
+and --headless when the browser runs with --remote-debugging-port or
+--remote-debugging-pipe, so it has no effect without one of them. Unlike
+--no-startup-window, the startup window opens and the last session is
+restored as usual. Pages see nothing.
+
+diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
+index 37a8337..fee8948 100644
+--- a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
++++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
+@@ -86,6 +86,13 @@ const char ChromeDevToolsManagerDelegate::kTypePage[] = "page";
+ 
+ namespace {
+ 
++// AliasMode: --aliasmode-keep-alive keeps the browser running after its last
++// window closes, as --no-startup-window does, so the launcher can still read
++// the profile over the remote debugging connection before it closes the
++// browser with Browser.close. The startup window and session restore stay as
++// they are. Pages see nothing.
++constexpr char kAliasModeKeepAlive[] = "aliasmode-keep-alive";
++
+ // LINT.IfChange(DevToolsRemoteDebuggingConnectionPermission)
+ // This enum is used for UMA histograms and should not be renumbered.
+ enum class DevToolsRemoteDebuggingConnectionPermission {
+@@ -194,8 +201,11 @@ ChromeDevToolsManagerDelegate::ChromeDevToolsManagerDelegate() {
+   // manager daemon. The extra keep alive is not needed and makes ChromeOS
+   // not able to shutdown chrome properly. See https://crbug.com/40167603.
+   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  // AliasMode: --aliasmode-keep-alive takes the same keep-alive with a
++  // startup window, so the browser outlives its last window.
+   if ((command_line->HasSwitch(switches::kNoStartupWindow) ||
+-       command_line->HasSwitch(switches::kHeadless)) &&
++       command_line->HasSwitch(switches::kHeadless) ||
++       command_line->HasSwitch(kAliasModeKeepAlive)) &&
+       (command_line->HasSwitch(switches::kRemoteDebuggingPipe) ||
+        command_line->HasSwitch(switches::kRemoteDebuggingPort))) {
+     // If running without a startup window with remote debugging,
