@@ -42,6 +42,14 @@ def test_reads_repeat_within_a_session(case, record):
     assert page["audioHash"][0] == page["audioHash"][1]
 
 
+def test_put_image_data_reads_back_as_written(persona_seed, probes, record):
+    """With --fingerprint-noise, a palette written after a draw reads back as written, as in stock Chrome."""
+    persona, seed = persona_seed
+    page = probes(persona, seed, "bare", args=["--fingerprint-noise"]).values["page"]
+    record.update(changed_bytes=page["canvasPalette"])
+    assert page["canvasPalette"] == 0
+
+
 def test_same_seed_same_machine(persona_seed, server, binary, probes, record):
     persona, seed = persona_seed
     first = probes(persona, seed, "bare")

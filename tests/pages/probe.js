@@ -75,6 +75,33 @@ async function canvasHash() {
   return sha256(context.getImageData(0, 0, canvas.width, canvas.height).data.buffer);
 }
 
+// The fingerprint checker's palette probe: draw a path and text, write a
+// palette with putImageData and read it back. Returns the bytes that changed.
+function canvasPalette() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const context = canvas.getContext("2d");
+  context.beginPath();
+  context.arc(100, 100, 20, 0, 6.28);
+  context.fillStyle = "#123";
+  context.fill();
+  context.font = "14px Arial";
+  context.fillText("arm", 2, 120);
+  const image = new ImageData(64, 64);
+  for (let i = 0; i < 4096; i++) {
+    image.data[i * 4] = (i * 37 + 11) & 255;
+    image.data[i * 4 + 1] = (i * 91 + 53) & 255;
+    image.data[i * 4 + 2] = (i * 17 + 29) & 255;
+    image.data[i * 4 + 3] = 255;
+  }
+  context.putImageData(image, 10, 10);
+  const back = context.getImageData(10, 10, 64, 64).data;
+  let changed = 0;
+  for (let i = 0; i < back.length; i++) if (back[i] !== image.data[i]) changed++;
+  return changed;
+}
+
 async function audioHash() {
   const context = new OfflineAudioContext(1, 44100, 44100);
   const oscillator = context.createOscillator();
@@ -198,6 +225,7 @@ async function collectWindow(fonts) {
     consoleStackRead: await consoleProbe(),
     notification: { permission: typeof Notification !== "undefined" ? Notification.permission : null, query: notification },
     canvas: [await canvasHash(), await canvasHash()],
+    canvasPalette: canvasPalette(),
     audioHash: [await attempt(audioHash), await attempt(audioHash)],
   };
 }

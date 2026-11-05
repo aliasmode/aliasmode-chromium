@@ -1,0 +1,343 @@
+Subject: [PATCH] canvas: pixels written with putImageData read back as written
+
+The fingerprint checker draws a path and text, writes a 64x64 palette with
+putImageData and reads it back: about 9,000 bytes came back changed, where
+stock Chrome gives 0. Every pixel of a random palette is unlike its
+neighbours, so the noise moved each one, and the canvas counted as drawn
+because of the earlier path and text.
+
+A 2D context now keeps the region putImageData wrote since its last draw.
+getImageData, toDataURL, toBlob and convertToBlob leave those pixels as
+the canvas holds them; they still key the noise of their neighbours. Any
+draw (fill, stroke, text, image, gradient) ends the region, and a reset,
+a whole-canvas clear and a whole-canvas putImageData empty it. An exact
+opaque fillRect keeps it, as it keeps the canvas undrawn. Structured
+clones of an ImageBitmap cut from the canvas keep the old rule.
+
+diff --git a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc
+index 6361ac0..3782862 100644
+--- a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc
++++ b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.cc
+@@ -28,6 +28,7 @@
+ #include "third_party/skia/include/core/SkImageInfo.h"
+ #include "third_party/skia/include/core/SkPixmap.h"
+ #include "third_party/skia/include/core/SkRect.h"
++#include "third_party/skia/include/core/SkRegion.h"
+ #include "ui/gfx/skia_span_util.h"
+ 
+ namespace blink::apostate_readback_noise {
+@@ -437,8 +438,19 @@ struct Region {
+   int32_t top = 0;
+   int32_t right = 0;
+   int32_t bottom = 0;
++  // Pixels the page wrote itself since the canvas last drew, in canvas
++  // coordinates, and where the surface's (0, 0) lies on the canvas. They stay
++  // as they are held; they still key their neighbours.
++  const SkRegion* kept = nullptr;
++  int32_t canvas_x = 0;
++  int32_t canvas_y = 0;
+ };
+ 
++bool Kept(const Region& region, int32_t x, int32_t y) {
++  return region.kept &&
++         region.kept->contains(x + region.canvas_x, y + region.canvas_y);
++}
++
+ // Stands in for a neighbour outside the canvas in the hash input.
+ constexpr uint64_t kOutsideKey = 0x9e3779b97f4a7c15ull;
+ 
+@@ -566,6 +578,9 @@ void ApplyLegacy(const Surface& surface, const Region& region) {
+     }
+     const RowDigest& here = row_at(y);
+     for (int32_t x = region.left; x < region.right; ++x) {
++      if (Kept(region, x, y)) {
++        continue;
++      }
+       const uint64_t centre = here.keys[static_cast<wtf_size_t>(x)];
+       const CanonicalPixel& value = here.values[static_cast<wtf_size_t>(x)];
+       std::array<uint64_t, 8> neighbour_keys;
+@@ -738,6 +753,9 @@ void ApplyBands(const Surface& surface, const Region& region) {
+     const Vector<uint32_t>& here = row(y);
+     const Vector<uint32_t>& below = row(y + 1);
+     for (int32_t x = region.left; x < region.right; ++x) {
++      if (Kept(region, x, y)) {
++        continue;
++      }
+       const wtf_size_t i = static_cast<wtf_size_t>(x) + 1;
+       const std::array<uint32_t, 8> around = {
+           above[i - 1], above[i], above[i + 1], here[i - 1],
+@@ -903,7 +921,8 @@ uint64_t Seed() {
+ 
+ scoped_refptr<StaticBitmapImage> ApplyToSnapshot(
+     scoped_refptr<StaticBitmapImage> snapshot,
+-    bool drawn) {
++    bool drawn,
++    const SkRegion* kept) {
+   if (!Enabled() || !drawn || !snapshot) {
+     return snapshot;
+   }
+@@ -921,7 +940,9 @@ scoped_refptr<StaticBitmapImage> ApplyToSnapshot(
+     return snapshot;
+   }
+   if (std::optional<Surface> surface = SurfaceForPixmap(perturbed.pixmap())) {
+-    Apply(*surface);
++    ApplyToRegion(*surface, Region{.right = surface->width,
++                                   .bottom = surface->height,
++                                   .kept = kept});
+   }
+   perturbed.setImmutable();
+   sk_sp<SkImage> image = perturbed.asImage();
+@@ -942,7 +963,8 @@ bool ReadPixelsForPage(const cc::PaintImage& image,
+                        const SkPixmap& dst,
+                        int src_x,
+                        int src_y,
+-                       bool drawn) {
++                       bool drawn,
++                       const SkRegion* kept) {
+   const auto plain = [&] {
+     return image.readPixels(dst.info(), dst.writable_addr(), dst.rowBytes(),
+                             src_x, src_y);
+@@ -980,7 +1002,10 @@ bool ReadPixelsForPage(const cc::PaintImage& image,
+                   Region{.left = covered.x() - padded.x(),
+                          .top = covered.y() - padded.y(),
+                          .right = covered.right() - padded.x(),
+-                         .bottom = covered.bottom() - padded.y()});
++                         .bottom = covered.bottom() - padded.y(),
++                         .kept = kept,
++                         .canvas_x = padded.x(),
++                         .canvas_y = padded.y()});
+   }
+   SkPixmap from;
+   SkPixmap to;
+diff --git a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h
+index 9fb0fd2..51ab8ce 100644
+--- a/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h
++++ b/third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h
+@@ -13,6 +13,7 @@
+ #include "third_party/blink/renderer/core/core_export.h"
+ 
+ class SkPixmap;
++class SkRegion;
+ 
+ namespace cc {
+ class PaintImage;
+@@ -139,18 +140,23 @@ CORE_EXPORT void ApplyToPixmap(const SkPixmap& pixmap);
+ // encoded or copied out, or `snapshot` itself when the policy is off or the
+ // canvas holds nothing `drawn`. The snapshot is never written to, so the
+ // canvas keeps a clean backing store and the result is perturbed exactly once.
++// Pixels inside `kept`, in canvas coordinates, are the page's own and come
++// back as they are held.
+ CORE_EXPORT scoped_refptr<StaticBitmapImage> ApplyToSnapshot(
+     scoped_refptr<StaticBitmapImage> snapshot,
+-    bool drawn);
++    bool drawn,
++    const SkRegion* kept = nullptr);
+ 
+ // `image.readPixels(dst)`, with the policy applied to the pixels the image
+ // holds rather than to the converted result, unless the canvas holds nothing
+-// `drawn`. Returns what readPixels returns.
++// `drawn`. Pixels inside `kept`, in image coordinates, read back as they are
++// held. Returns what readPixels returns.
+ CORE_EXPORT bool ReadPixelsForPage(const cc::PaintImage& image,
+                                    const SkPixmap& dst,
+                                    int src_x,
+                                    int src_y,
+-                                   bool drawn);
++                                   bool drawn,
++                                   const SkRegion* kept = nullptr);
+ 
+ }  // namespace apostate_readback_noise
+ 
+diff --git a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
+index bd30221..9dded9a 100644
+--- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
++++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
+@@ -50,6 +50,8 @@
+ #include "ui/gfx/geometry/rect.h"
+ #include "ui/gfx/geometry/size.h"
+ 
++class SkRegion;
++
+ namespace base {
+ struct PendingTask;
+ }  // namespace base
+@@ -192,6 +194,10 @@ class CORE_EXPORT CanvasRenderingContext
+   // renderer rasterised was drawn; pixels the page wrote itself read back
+   // exactly.
+   virtual bool ApostateReadbackNoised() const { return true; }
++  // Apostate: the pixels, in canvas coordinates, that the page wrote itself
++  // with putImageData since the context last drew. A noised readback leaves
++  // them as they are held. Null when there are none to keep.
++  virtual const SkRegion* ApostateKeptPixels() const { return nullptr; }
+   void DidDraw(CanvasPerformanceMonitor::DrawType draw_type) {
+     const CanvasRenderingContextHost* const host = Host();
+     return DidDraw(host ? gfx::Rect(host->Size()) : gfx::Rect(), draw_type);
+diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+index 485cb4e..e17ff09 100644
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+@@ -1430,7 +1430,8 @@ String HTMLCanvasElement::ToDataURLInternal(
+     image_bitmap =
+         apostate_readback_noise::ApplyToSnapshot(
+             std::move(image_bitmap),
+-            !context_ || context_->ApostateReadbackNoised());
++            !context_ || context_->ApostateReadbackNoised(),
++            context_ ? context_->ApostateKeptPixels() : nullptr);
+     std::unique_ptr<ImageDataBuffer> data_buffer =
+         ImageDataBuffer::Create(image_bitmap);
+     if (!data_buffer)
+@@ -1538,7 +1539,8 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
+     image_bitmap =
+         apostate_readback_noise::ApplyToSnapshot(
+             std::move(image_bitmap),
+-            !context_ || context_->ApostateReadbackNoised());
++            !context_ || context_->ApostateReadbackNoised(),
++            context_ ? context_->ApostateKeptPixels() : nullptr);
+     auto* options = ImageEncodeOptions::Create();
+     options->setType(ImageEncoderUtils::MimeTypeName(encoding_mime_type));
+     async_creator = MakeGarbageCollected<CanvasAsyncBlobCreator>(
+diff --git a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+index 0f5ffbf..501d8de 100644
+--- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
++++ b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+@@ -580,7 +580,8 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
+     // goes to the encoder and the canvas keeps its own pixels.
+     image_bitmap =
+         apostate_readback_noise::ApplyToSnapshot(
+-            std::move(image_bitmap), context_->ApostateReadbackNoised());
++            std::move(image_bitmap), context_->ApostateReadbackNoised(),
++            context_->ApostateKeptPixels());
+     auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<Blob>>(
+         script_state, exception_state.GetContext());
+     CanvasAsyncBlobCreator::ToBlobFunctionType function_type =
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+index 13a599a..03f3506 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+@@ -519,7 +519,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+     const bool read_pixels_successful =
+         apostate_readback_noise::ReadPixelsForPage(
+             snapshot->PaintImageForCurrentFrame(), image_data_pixmap, sx, sy,
+-            ApostateDrawn());
++            ApostateDrawn(), ApostateKept());
+     if (!read_pixels_successful) {
+       SkIRect bounds =
+           snapshot->PaintImageForCurrentFrame().GetSkImageInfo().bounds();
+@@ -598,9 +598,15 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
+   gfx::Rect source_rect = dest_rect;
+   source_rect.Offset(-dest_offset);
+   // Apostate: the page's own pixels over the whole canvas leave nothing the
+-  // renderer drew (ApostateDrawn()).
++  // renderer drew (ApostateDrawn()), and over part of it read back as written
++  // until the next draw (ApostateKept()).
+   if (dest_rect == gfx::Rect(0, 0, Width(), Height())) {
+     apostate_drawn_ = false;
++    apostate_kept_.setEmpty();
++  } else {
++    apostate_kept_.op(SkIRect::MakeXYWH(dest_rect.x(), dest_rect.y(),
++                                        dest_rect.width(), dest_rect.height()),
++                      SkRegion::kUnion_Op);
+   }
+ 
+   SkPixmap data_pixmap = data->GetSkPixmap();
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
+index a6b36b5..c459357 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
+@@ -832,6 +832,7 @@ void Canvas2DRecorderContext::ResetInternal() {
+   state_stack_.front() = MakeGarbageCollected<CanvasRenderingContext2DState>();
+   layer_count_ = 0;
+   apostate_drawn_ = false;
++  apostate_kept_.setEmpty();
+   SetIsTransformInvertible(true);
+ 
+   CanvasPath::Clear();
+@@ -1754,6 +1755,7 @@ void Canvas2DRecorderContext::fillRect(double x,
+   // shadowed, filtered or clipped, comes out the same on every machine, so it
+   // does not count as drawn (ApostateDrawn()).
+   const bool drawn_before = apostate_drawn_;
++  const SkRegion kept_before = apostate_kept_;
+   const AffineTransform& transform = GetTransform();
+   const cc::PaintFlags* fill_flags = state.GetFlags(
+       CanvasRenderingContext2DState::kFillPaintType, kDrawForegroundOnly,
+@@ -1783,6 +1785,7 @@ void Canvas2DRecorderContext::fillRect(double x,
+       CanvasPerformanceMonitor::DrawType::kRectangle);
+   if (exact) {
+     apostate_drawn_ = drawn_before;
++    apostate_kept_ = kept_before;
+   }
+ }
+ 
+@@ -2010,6 +2013,7 @@ void Canvas2DRecorderContext::clearRect(double x,
+   if (!GetState().HasClip() && GetTransform().MapRect(rect).Contains(
+                                    gfx::RectF(0, 0, Width(), Height()))) {
+     apostate_drawn_ = false;
++    apostate_kept_.setEmpty();
+   }
+   if (RectContainsTransformedRect(rect, clip_bounds)) {
+     CheckOverdraw(&clear_flags, CanvasRenderingContext2DState::kNoImage,
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
+index 945ba48..4476b70 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
+@@ -54,6 +54,7 @@
+ #include "third_party/skia/include/core/SkPathTypes.h"
+ #include "third_party/skia/include/core/SkRect.h"
+ #include "third_party/skia/include/core/SkRefCnt.h"
++#include "third_party/skia/include/core/SkRegion.h"
+ #include "ui/gfx/geometry/rect_f.h"
+ #include "ui/gfx/geometry/skia_conversions.h"
+ 
+@@ -182,6 +183,11 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+   // since the canvas was last reset. A canvas holding only what the page
+   // wrote itself reads back exactly under --fingerprint-noise.
+   bool ApostateDrawn() const { return apostate_drawn_; }
++  // Apostate: the pixels putImageData wrote since the last draw, which read
++  // back as written, as on a canvas holding nothing drawn. Any draw ends it.
++  const SkRegion* ApostateKept() const {
++    return apostate_kept_.isEmpty() ? nullptr : &apostate_kept_;
++  }
+   virtual void reset();          // Called by the javascript interface
+   virtual void ResetInternal();  // Called from within blink
+ 
+@@ -446,6 +452,8 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+   int layer_count_ = 0;
+   // See ApostateDrawn().
+   bool apostate_drawn_ = false;
++  // See ApostateKept().
++  SkRegion apostate_kept_;
+   AntiAliasingMode clip_antialiasing_ = kNotAntiAliased;
+   // The paint worklet canvas operates on CSS pixels, and that's different than
+   // the HTML canvas which operates on physical pixels. In other words, the
+@@ -871,6 +879,7 @@ void Canvas2DRecorderContext::Draw(
+     return;
+   }
+   apostate_drawn_ = true;
++  apostate_kept_.setEmpty();
+ 
+   if (GetState().IsFilterUnresolved()) [[unlikely]] {
+     // Resolving a filter requires allocating garbage-collected objects.
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h
+index cfa0ac9..980888a 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h
+@@ -227,6 +227,7 @@ class MODULES_EXPORT CanvasRenderingContext2D final
+ 
+   bool IsPaintable() const final;
+   bool ApostateReadbackNoised() const override { return ApostateDrawn(); }
++  const SkRegion* ApostateKeptPixels() const override { return ApostateKept(); }
+   bool IsHibernating() const final;
+ 
+   void WillDrawImage(CanvasImageSource*, bool image_is_texture_backed) final;
+diff --git a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
+index b4df000..2888696 100644
+--- a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
++++ b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
+@@ -152,6 +152,7 @@ class MODULES_EXPORT OffscreenCanvasRenderingContext2D final
+ 
+   bool IsPaintable() const final;
+   bool ApostateReadbackNoised() const override { return ApostateDrawn(); }
++  const SkRegion* ApostateKeptPixels() const override { return ApostateKept(); }
+ 
+   scoped_refptr<CanvasResource> ProduceCanvasResource(FlushReason);
+ 
