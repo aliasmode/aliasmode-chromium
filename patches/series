@@ -164,3 +164,4 @@
 0170-devtools-a-keep-alive-switch-outlives-the-last-window.patch
 0171-canvas-pixels-written-with-putimagedata-read-back-as-written.patch
 0172-fonts-a-windows-persona-answers-helvetica-on-a-windows-host.patch
+0173-window-a-hidden-window-on-windows-tells-its-page-where-it-is.patch

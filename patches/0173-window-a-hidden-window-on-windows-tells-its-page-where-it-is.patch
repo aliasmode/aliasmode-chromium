@@ -1,0 +1,43 @@
+Subject: [PATCH] window: a hidden window on Windows tells its page where it is
+
+A window opened hidden, such as in a disconnected remote desktop session,
+never sent its renderer the window rect: RenderWidgetHostImpl skips screen
+rects while the widget is hidden. Its page read outerWidth and
+outerHeight as the screen's available rect, 1920x1032, from patch 0100,
+while the window was 1248x972, so outerWidth - innerWidth was 688.
+
+On Windows a hidden view now sends its rects when it is in a window and
+that window is at least as large as the view. A background tab is in no
+window and a minimised window is smaller than its view; both still wait
+until they are shown, as before.
+
+diff --git a/content/browser/renderer_host/render_widget_host_impl.cc b/content/browser/renderer_host/render_widget_host_impl.cc
+index 043cc52..c82dde8 100644
+--- a/content/browser/renderer_host/render_widget_host_impl.cc
++++ b/content/browser/renderer_host/render_widget_host_impl.cc
+@@ -688,7 +688,25 @@ void RenderWidgetHostImpl::SendScreenRects() {
+   if (is_hidden_) {
+     // On GTK, this comes in for backgrounded tabs. Ignore, to match what
+     // happens on Win & Mac, and when the view is shown it'll call this again.
++#if BUILDFLAG(IS_WIN)
++    // Apostate: a window that is hidden from the start, such as one opened
++    // in a disconnected remote session or behind other windows, never told
++    // its renderer where it is, and outerWidth and outerHeight read the
++    // screen's available rect (patch 0100) while the window is smaller. A
++    // view that is in a window, and whose window holds it, sends its rects
++    // while hidden too. A background tab is in no window and a minimised
++    // window is smaller than its view; both still wait to be shown.
++    const gfx::NativeView native_view = view_->GetNativeView();
++    const gfx::Rect view_rect = view_->GetViewBoundsWithoutTransform();
++    const gfx::Rect window_rect = view_->GetBoundsInScreenWithoutTransform();
++    if (!native_view || !native_view->GetRootWindow() || view_rect.IsEmpty() ||
++        window_rect.width() < view_rect.width() ||
++        window_rect.height() < view_rect.height()) {
++      return;
++    }
++#else
+     return;
++#endif
+   }
+ 
+   if (last_view_screen_rect_ == view_->GetViewBoundsWithoutTransform() &&
