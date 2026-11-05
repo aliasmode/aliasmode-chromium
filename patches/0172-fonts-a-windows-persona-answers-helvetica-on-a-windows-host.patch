@@ -1,0 +1,28 @@
+Subject: [PATCH] fonts: a Windows persona answers Helvetica on a Windows host
+
+Stock Chrome on Windows shows Helvetica, measuring as Arial. A Windows
+persona hid it on a Windows host, because patch 0146 answered the names
+Windows aliases through the alternate family only on Linux. Windows has
+no Helvetica face, so its own lookup answers Helvetica with Arial, as
+stock Chrome's does. A Mac host still hides these names, since its lookup
+would reach the Mac's own Helvetica.
+
+diff --git a/third_party/blink/renderer/platform/fonts/font_cache.cc b/third_party/blink/renderer/platform/fonts/font_cache.cc
+index 631753e..fe12421 100644
+--- a/third_party/blink/renderer/platform/fonts/font_cache.cc
++++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
+@@ -227,10 +227,11 @@ bool FontCache::ProfileHidesFamily(const AtomicString& family) {
+   // way Windows does (CreateWindowsPersonaTypeface in skia/font_cache_skia.cc):
+   // a name no face answers to falls back to its alternate family (Helvetica
+   // is Arial), and a name Windows files a listed family under finds that
+-  // family (Franklin Gothic is Franklin Gothic Medium). Other builds keep
+-  // these names hidden, because their lookup would reach the host's own
++  // family (Franklin Gothic is Franklin Gothic Medium). A Windows host answers
++  // them that way itself, as stock Windows Chrome shows Helvetica. A Mac host
++  // keeps these names hidden, because its lookup would reach the host's own
+   // Helvetica.
+-#if BUILDFLAG(IS_LINUX)
++#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+   const bool windows_names = ClaimsWindows(*profile);
+ #else
+   const bool windows_names = false;
