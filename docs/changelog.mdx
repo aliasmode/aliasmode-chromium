@@ -7,7 +7,7 @@ Each release publishes browser archives for Linux x64, Linux arm64, macOS arm64 
 
 ## AliasMode Chromium 155.0.8059.85 build 5
 
-Not released yet. A seed presents the same machine as in build 4.
+Released 6 November 2026 as [`v155.0.8059.85-aliasmode.5`](https://github.com/aliasmode/aliasmode-chromium/releases/tag/v155.0.8059.85-aliasmode.5). Windows x64 and Linux x64 archives; the macOS archive follows. A seed presents the same machine as in build 4.
 
 - **Canvas.** With [`--fingerprint-noise`](/reference/switches#fingerprint-noise), pixels written with `putImageData` read back as written until the next drawing call, also on a canvas that already holds drawn text or shapes. Build 4 changed about 9,000 bytes of a 64x64 palette written after a draw. Stock Chrome changes none.
 - **TLS.** The ClientHello no longer asks for server handshake padding (extension `0x12e0`). Google Chrome 156 on the stable channel sends no such extension, so the JA4 is `t13d1517h2_8daaf6152771_cb7bf5808d99` again. Builds since 155.0.8059.31 build 2 sent it, as Chrome for Testing does.
