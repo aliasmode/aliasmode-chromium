@@ -1,6 +1,7 @@
 # AliasMode Chromium
 
-AliasMode's open-source Chromium engine for antidetect browsing, built on top of
+The open-source Chromium engine of [AliasMode](https://aliasmode.com/), the free
+antidetect browser. Built on top of
 [Apostate](https://github.com/heretic-tech/apostate).
 
 [Releases](https://github.com/aliasmode/aliasmode-chromium/releases) ·
