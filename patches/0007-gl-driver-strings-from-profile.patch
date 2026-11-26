@@ -63,7 +63,7 @@ index ff33d3da54..0776033183 100644
  };
  
 diff --git a/ui/gl/gl_gl_api_implementation.cc b/ui/gl/gl_gl_api_implementation.cc
-index 6e785fafa2..3ebdfb1937 100644
+index da5e4e1287..e708504315 100644
 --- a/ui/gl/gl_gl_api_implementation.cc
 +++ b/ui/gl/gl_gl_api_implementation.cc
 @@ -4,6 +4,9 @@
@@ -76,9 +76,9 @@ index 6e785fafa2..3ebdfb1937 100644
  #include <array>
  #include <vector>
  
-@@ -247,6 +250,36 @@ const GLubyte* RealGLApi::glGetStringFn(GLenum name) {
-     InitializeFilteredExtensionsIfNeeded();
-     return reinterpret_cast<const GLubyte*>(filtered_exts_str_.c_str());
+@@ -266,6 +269,36 @@ const GLubyte* RealGLApi::glGetStringFn(GLenum name) {
+           filtered_requestable_exts_str_.c_str());
+     }
    }
 +
 +  // Apostate: substitute the profile's driver strings here, at the binding

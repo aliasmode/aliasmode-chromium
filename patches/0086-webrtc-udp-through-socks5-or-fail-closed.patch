@@ -26,18 +26,18 @@ index 2f41e6c54f..8eab82af3c 100644
    command_line->CopySwitchesFrom(browser_command_line, kCommonSwitchNames);
  
 diff --git a/net/BUILD.gn b/net/BUILD.gn
-index ada05fea42..916ab8f2ad 100644
+index e81e322f82..4d1f780815 100644
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
-@@ -985,6 +985,7 @@ component("net") {
+@@ -1032,6 +1032,7 @@ component("net") {
      "socket/connection_attempts.h",
      "socket/datagram_client_socket.cc",
      "socket/datagram_client_socket.h",
 +    "socket/datagram_server_socket.cc",
      "socket/datagram_server_socket.h",
      "socket/datagram_socket.h",
-     "socket/delayed_datagram_socket.cc",
-@@ -1021,6 +1022,8 @@ component("net") {
+     "socket/delayed_client_socket_factory.cc",
+@@ -1070,6 +1071,8 @@ component("net") {
      "socket/socks5_client_socket.h",
      "socket/socks5_datagram_client_socket.cc",
      "socket/socks5_datagram_client_socket.h",

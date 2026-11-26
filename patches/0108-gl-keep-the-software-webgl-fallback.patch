@@ -47,16 +47,13 @@ index 806df82713..3c5d785443 100644
          "Automatic fallback to software WebGL has been deprecated. Please use "
          "the --enable-unsafe-swiftshader "
 diff --git a/ui/gl/gl_features.cc b/ui/gl/gl_features.cc
-index 7cea474aa5..5722e7432b 100644
+index d35e3fcf5f..1ecf2a7c2f 100644
 --- a/ui/gl/gl_features.cc
 +++ b/ui/gl/gl_features.cc
-@@ -316,9 +316,40 @@ bool IsSwiftShaderUsedForWebGLByCommandLine(
+@@ -283,6 +283,41 @@ bool IsSwiftShaderAllowed(const base::CommandLine* command_line) {
+   return true;
  }
- #endif
- 
--// Allow fallback to SwfitShader without command line flags during the
--// deprecation period.
--BASE_FEATURE(kAllowSwiftShaderFallback, base::FEATURE_DISABLED_BY_DEFAULT);
+ #else
 +// Allow fallback to SwiftShader without command line flags.
 +//
 +// Upstream deprecated this from Chrome 130 and removed it on Linux and macOS
@@ -91,6 +88,16 @@ index 7cea474aa5..5722e7432b 100644
 +//
 +// --disable-features=AllowSwiftShaderFallback remains the way to turn it off.
 +BASE_FEATURE(kAllowSwiftShaderFallback, base::FEATURE_ENABLED_BY_DEFAULT);
++
+ bool IsSwiftShaderAllowed(const base::CommandLine* command_line) {
+   // If the switch to opt-into unsafe SwiftShader is present, always allow
+   // SwiftShader.
+@@ -299,7 +334,7 @@ bool IsSwiftShaderAllowed(const base::CommandLine* command_line) {
+     return true;
+   }
  
- bool IsSwiftShaderAllowedByFeature() {
-   return base::FeatureList::IsEnabled(kAllowSwiftShaderFallback);
+-  return false;
++  return base::FeatureList::IsEnabled(kAllowSwiftShaderFallback);
+ }
+ 
+ bool IsSwiftShaderUsedForWebGLByCommandLine(

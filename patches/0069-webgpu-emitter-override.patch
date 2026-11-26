@@ -10,13 +10,13 @@ profile verbatim, and subgroup sizes take the minimum with a
 power-of-two check so a bad profile value cannot trip Dawn's validation.
 
 diff --git a/gpu/command_buffer/service/webgpu_decoder_impl.cc b/gpu/command_buffer/service/webgpu_decoder_impl.cc
-index 255dab2d59..03ca36524f 100644
+index ca08bd3711..d7184117b9 100644
 --- a/gpu/command_buffer/service/webgpu_decoder_impl.cc
 +++ b/gpu/command_buffer/service/webgpu_decoder_impl.cc
-@@ -5,8 +5,10 @@
- #include "gpu/command_buffer/service/webgpu_decoder_impl.h"
+@@ -6,8 +6,10 @@
  
  #include <algorithm>
+ #include <array>
 +#include <map>
  #include <memory>
  #include <optional>
@@ -24,8 +24,8 @@ index 255dab2d59..03ca36524f 100644
  #include <string_view>
  #include <vector>
  
-@@ -1642,6 +1644,24 @@ bool WebGPUDecoderImpl::use_blocklist() const {
-       safety_level_ == webgpu::SafetyLevel::kUnsafe ||
+@@ -1707,6 +1709,24 @@ bool WebGPUDecoderImpl::use_blocklist() const {
+       safety_level() == webgpu::SafetyLevel::kUnsafe ||
        std::ranges::contains(require_disabled_toggles_, "adapter_blocklist"));
  }
 +// Intersect the enumerated adapter with the claimed device before the page
@@ -49,7 +49,7 @@ index 255dab2d59..03ca36524f 100644
  
  wgpu::Adapter WebGPUDecoderImpl::CreatePreferredAdapter(
      wgpu::PowerPreference power_preference,
-@@ -1873,6 +1893,8 @@ wgpu::Adapter WebGPUDecoderImpl::CreatePreferredAdapter(
+@@ -1944,6 +1964,8 @@ wgpu::Adapter WebGPUDecoderImpl::CreatePreferredAdapter(
          continue;
        }
  
@@ -58,7 +58,7 @@ index 255dab2d59..03ca36524f 100644
        return wgpu::Adapter(native_adapter.Get());
      }
    }
-@@ -1892,6 +1914,8 @@ wgpu::Adapter WebGPUDecoderImpl::CreatePreferredAdapter(
+@@ -1963,6 +1985,8 @@ wgpu::Adapter WebGPUDecoderImpl::CreatePreferredAdapter(
        continue;
      }
  

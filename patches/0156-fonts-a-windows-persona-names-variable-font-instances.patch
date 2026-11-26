@@ -19,10 +19,10 @@ base family. The filter still decides by the name the page wrote, and
 the persona's font list names the instances rather than the bases.
 
 diff --git a/third_party/blink/renderer/platform/fonts/font_cache.cc b/third_party/blink/renderer/platform/fonts/font_cache.cc
-index b68ee5713c..631753efa8 100644
+index 5494547ac3..2ccb72ed7e 100644
 --- a/third_party/blink/renderer/platform/fonts/font_cache.cc
 +++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
-@@ -154,6 +154,48 @@ const AtomicString& PersonaSystemUiFamily() {
+@@ -155,6 +155,48 @@ const AtomicString& PersonaSystemUiFamily() {
    return family;
  }
  
@@ -71,7 +71,7 @@ index b68ee5713c..631753efa8 100644
  }  // namespace
  
  // static
-@@ -362,6 +404,18 @@ const FontPlatformData* FontCache::GetFontPlatformData(
+@@ -363,6 +405,18 @@ const FontPlatformData* FontCache::GetFontPlatformData(
      AlternateFontName alternate_font_name) {
    TRACE_EVENT0("fonts", "FontCache::GetFontPlatformData");
  
@@ -87,6 +87,6 @@ index b68ee5713c..631753efa8 100644
 +    }
 +  }
 +
-   if (creation_params.CreationType() == kCreateFontByFamily &&
+   if (creation_params.CreationType() == FontFaceCreationType::kFamily &&
        creation_params.Family() == font_family_names::kSystemUi) {
      if (const AtomicString& family = PersonaSystemUiFamily(); !family.empty()) {

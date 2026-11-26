@@ -145,7 +145,7 @@ index 831fcf140e..456c1a27c3 100644
    CompletionOnceCallback callback_;
  
 diff --git a/net/http/http_proxy_connect_job.cc b/net/http/http_proxy_connect_job.cc
-index e40cf32cb9..12b2fcba11 100644
+index 691dc686cf..006434d076 100644
 --- a/net/http/http_proxy_connect_job.cc
 +++ b/net/http/http_proxy_connect_job.cc
 @@ -10,6 +10,8 @@
@@ -154,10 +154,10 @@ index e40cf32cb9..12b2fcba11 100644
  
 +#include "base/apostate/profile.h"
 +#include "base/strings/utf_string_conversions.h"
+ #include "base/containers/flat_set.h"
  #include "base/functional/bind.h"
  #include "base/functional/callback.h"
- #include "base/metrics/field_trial.h"
-@@ -157,7 +159,8 @@ HttpProxySocketParams::HttpProxySocketParams(
+@@ -158,7 +160,8 @@ HttpProxySocketParams::HttpProxySocketParams(
      const NetworkTrafficAnnotationTag traffic_annotation,
      const NetworkAnonymizationKey& network_anonymization_key,
      SecureDnsPolicy secure_dns_policy,
@@ -167,7 +167,7 @@ index e40cf32cb9..12b2fcba11 100644
      : HttpProxySocketParams(std::move(nested_params),
                              std::nullopt,
                              endpoint,
-@@ -167,7 +170,8 @@ HttpProxySocketParams::HttpProxySocketParams(
+@@ -168,7 +171,8 @@ HttpProxySocketParams::HttpProxySocketParams(
                              std::move(traffic_annotation),
                              network_anonymization_key,
                              secure_dns_policy,
@@ -177,7 +177,7 @@ index e40cf32cb9..12b2fcba11 100644
  
  HttpProxySocketParams::HttpProxySocketParams(
      SSLConfig quic_ssl_config,
-@@ -178,7 +182,8 @@ HttpProxySocketParams::HttpProxySocketParams(
+@@ -179,7 +183,8 @@ HttpProxySocketParams::HttpProxySocketParams(
      const NetworkTrafficAnnotationTag traffic_annotation,
      const NetworkAnonymizationKey& network_anonymization_key,
      SecureDnsPolicy secure_dns_policy,
@@ -187,7 +187,7 @@ index e40cf32cb9..12b2fcba11 100644
      : HttpProxySocketParams(std::nullopt,
                              std::move(quic_ssl_config),
                              endpoint,
-@@ -188,7 +193,8 @@ HttpProxySocketParams::HttpProxySocketParams(
+@@ -189,7 +194,8 @@ HttpProxySocketParams::HttpProxySocketParams(
                              std::move(traffic_annotation),
                              network_anonymization_key,
                              secure_dns_policy,
@@ -197,7 +197,7 @@ index e40cf32cb9..12b2fcba11 100644
  
  HttpProxySocketParams::HttpProxySocketParams(
      std::optional<ConnectJobParams> nested_params,
-@@ -200,7 +206,8 @@ HttpProxySocketParams::HttpProxySocketParams(
+@@ -201,7 +207,8 @@ HttpProxySocketParams::HttpProxySocketParams(
      const NetworkTrafficAnnotationTag traffic_annotation,
      const NetworkAnonymizationKey& network_anonymization_key,
      SecureDnsPolicy secure_dns_policy,
@@ -207,7 +207,7 @@ index e40cf32cb9..12b2fcba11 100644
      : nested_params_(std::move(nested_params)),
        quic_ssl_config_(std::move(quic_ssl_config)),
        endpoint_(endpoint),
-@@ -210,7 +217,8 @@ HttpProxySocketParams::HttpProxySocketParams(
+@@ -211,7 +218,8 @@ HttpProxySocketParams::HttpProxySocketParams(
        network_anonymization_key_(network_anonymization_key),
        traffic_annotation_(traffic_annotation),
        secure_dns_policy_(secure_dns_policy),
@@ -217,7 +217,7 @@ index e40cf32cb9..12b2fcba11 100644
    DCHECK(!proxy_chain_.is_direct());
    DCHECK(proxy_chain_.IsValid());
    CHECK(proxy_chain_index_ < proxy_chain_.length());
-@@ -906,6 +914,24 @@ void HttpProxyConnectJob::OnAuthChallenge() {
+@@ -907,6 +915,24 @@ void HttpProxyConnectJob::OnAuthChallenge() {
    // Stop timer while potentially waiting for user input.
    ResetTimer(base::TimeDelta());
  

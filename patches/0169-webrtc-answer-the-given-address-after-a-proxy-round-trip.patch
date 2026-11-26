@@ -68,10 +68,10 @@ index 28dab16..28ffd34 100644
    void BuildJSONValue(V8ObjectBuilder&) const override;
  
 diff --git a/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc b/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
-index 921fac2..82035a8 100644
+index 6459092360..f83376a99d 100644
 --- a/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
 +++ b/third_party/blink/renderer/modules/peerconnection/peer_connection_dependency_factory.cc
-@@ -59,9 +59,17 @@
+@@ -70,8 +70,16 @@
  #include "third_party/blink/renderer/core/frame/local_dom_window.h"
  #include "third_party/blink/renderer/core/frame/local_frame.h"
  #include "third_party/blink/renderer/core/frame/policy_container.h"
@@ -82,22 +82,21 @@ index 921fac2..82035a8 100644
 +#include "third_party/blink/renderer/core/page/frame_tree.h"
  #include "third_party/blink/renderer/core/page/page.h"
 +#include "third_party/blink/renderer/core/performance_entry_names.h"
- #include "third_party/blink/renderer/core/probe/core_probes.h"
 +#include "third_party/blink/renderer/core/timing/dom_window_performance.h"
 +#include "third_party/blink/renderer/core/timing/performance_resource_timing.h"
 +#include "third_party/blink/renderer/core/timing/window_performance.h"
- #include "third_party/blink/renderer/modules/mediastream/media_constraints.h"
- #include "third_party/blink/renderer/modules/peerconnection/adapters/web_rtc_cross_thread_copier.h"
  #include "third_party/blink/renderer/modules/peerconnection/rtc_error_util.h"
-@@ -71,6 +79,7 @@
- #include "third_party/blink/renderer/platform/graphics/video_frame_sink_bundle.h"
- #include "third_party/blink/renderer/platform/heap/cross_thread_persistent.h"
- #include "third_party/blink/renderer/platform/heap/persistent.h"
+ #include "third_party/blink/renderer/modules/peerconnection/rtc_peer_connection_handler.h"
+ #include "third_party/blink/renderer/modules/peerconnection/webrtc_video_perf_reporter.h"
+@@ -82,6 +90,7 @@
+ #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+ #include "third_party/blink/renderer/platform/heap/visitor.h"
+ #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 +#include "third_party/blink/renderer/platform/loader/fetch/resource_load_timing.h"
  #include "third_party/blink/renderer/platform/mediastream/webrtc_uma_histograms.h"
  #include "third_party/blink/renderer/platform/mojo/mojo_binding_context.h"
  #include "third_party/blink/renderer/platform/p2p/empty_network_manager.h"
-@@ -1007,6 +1016,57 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
+@@ -1043,6 +1052,57 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
    }
  }
  
@@ -155,7 +154,7 @@ index 921fac2..82035a8 100644
  std::unique_ptr<webrtc::PortAllocator>
  PeerConnectionDependencyFactory::CreatePortAllocator(
      blink::WebLocalFrame* web_frame) {
-@@ -1108,6 +1168,8 @@ PeerConnectionDependencyFactory::CreatePortAllocator(
+@@ -1144,6 +1204,8 @@ PeerConnectionDependencyFactory::CreatePortAllocator(
      port_config.enable_nonproxied_udp = false;
    }
  
@@ -279,10 +278,10 @@ index a282a1b..ef0145b 100644
          [&](AsyncPacketSocket* socket, const ReceivedIpPacket& packet) {
            OnReadPacket(socket, packet);
 diff --git a/third_party/webrtc/p2p/client/basic_port_allocator.h b/third_party/webrtc/p2p/client/basic_port_allocator.h
-index 97c1a7d..a898812 100644
+index 7c309c2849..c9a903d09d 100644
 --- a/third_party/webrtc/p2p/client/basic_port_allocator.h
 +++ b/third_party/webrtc/p2p/client/basic_port_allocator.h
-@@ -106,6 +106,18 @@ class RTC_EXPORT BasicPortAllocator : public PortAllocator {
+@@ -105,6 +105,18 @@ class RTC_EXPORT BasicPortAllocator : public PortAllocator {
  
    const Environment& env() const { return env_; }
  
@@ -301,9 +300,9 @@ index 97c1a7d..a898812 100644
   private:
    bool MdnsObfuscationEnabled() const override;
  
-@@ -120,6 +132,7 @@ class RTC_EXPORT BasicPortAllocator : public PortAllocator {
+@@ -119,6 +131,7 @@ class RTC_EXPORT BasicPortAllocator : public PortAllocator {
  
-   std::unique_ptr<LocalNetworkAccessPermissionFactoryInterface>
+   const std::unique_ptr<LocalNetworkAccessPermissionFactoryInterface>
        lna_permission_factory_;
 +  std::optional<TimeDelta> synthetic_stun_round_trip_;
  };

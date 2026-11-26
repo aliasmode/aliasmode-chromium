@@ -99,10 +99,10 @@ index a077b580f5..35ee2658d2 100644
    std::optional<bool> prefers_dark_;
    std::optional<std::string> accept_languages_;
 diff --git a/ui/gl/gl_gl_api_implementation.cc b/ui/gl/gl_gl_api_implementation.cc
-index 5af1edaf9b..136e3ea2c4 100644
+index 4a2e3c5367..6a90cf0a06 100644
 --- a/ui/gl/gl_gl_api_implementation.cc
 +++ b/ui/gl/gl_gl_api_implementation.cc
-@@ -317,6 +317,99 @@ void RealGLApi::glGetIntegervFn(GLenum pname, GLint* params) {
+@@ -329,6 +329,99 @@ void RealGLApi::glGetIntegervFn(GLenum pname, GLint* params) {
    }
  }
  
@@ -200,8 +200,8 @@ index 5af1edaf9b..136e3ea2c4 100644
 +}
 +
  const GLubyte* RealGLApi::glGetStringFn(GLenum name) {
-   if (name == GL_EXTENSIONS && disabled_exts_.size()) {
-     InitializeFilteredExtensionsIfNeeded();
+   if (disabled_exts_.size()) {
+     if (name == GL_EXTENSIONS) {
 diff --git a/ui/gl/gl_gl_api_implementation.h b/ui/gl/gl_gl_api_implementation.h
 index 1df38a4f87..9aa8325abe 100644
 --- a/ui/gl/gl_gl_api_implementation.h

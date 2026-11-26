@@ -35,7 +35,7 @@ index ee042f2734..2317f822a9 100644
  
  rtc_source_set("turn_customizer") {
 diff --git a/third_party/webrtc/api/candidate.cc b/third_party/webrtc/api/candidate.cc
-index 5075b898dc..2398b96f8a 100644
+index fea2dc3cc9..24932ffa42 100644
 --- a/third_party/webrtc/api/candidate.cc
 +++ b/third_party/webrtc/api/candidate.cc
 @@ -9,6 +9,9 @@
@@ -48,7 +48,7 @@ index 5075b898dc..2398b96f8a 100644
  
  #include <algorithm>  // IWYU pragma: keep
  #include <cstddef>
-@@ -81,19 +84,38 @@ std::string BuildCandidate(const Candidate& candidate, bool include_ufrag) {
+@@ -84,19 +87,38 @@ std::string BuildCandidate(const Candidate& candidate, bool include_ufrag) {
    os << kAttributeCandidate;
  
    absl::string_view type = candidate.type_name();
@@ -78,8 +78,8 @@ index 5075b898dc..2398b96f8a 100644
 -             ? candidate.address().hostname()
 -             : candidate.address().ipaddr().ToString())
 +     << address
-      << " " << candidate.address().PortAsString() << " "
-      << kAttributeCandidateTyp << " " << type << " ";
+      << " " << candidate.address().port() << " " << kAttributeCandidateTyp
+      << " " << type << " ";
  
    // Related address
    if (!candidate.related_address().IsNil()) {
@@ -88,6 +88,6 @@ index 5075b898dc..2398b96f8a 100644
 +       << (address_overridden ? address
 +                              : candidate.related_address().ipaddr().ToString())
 +       << " "
-        << kAttributeCandidateRport << " "
-        << candidate.related_address().PortAsString() << " ";
+        << kAttributeCandidateRport << " " << candidate.related_address().port()
+        << " ";
    }

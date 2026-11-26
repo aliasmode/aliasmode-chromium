@@ -9,27 +9,26 @@ the rendered buffer and the analyser read from one graph agree, the same
 graph renders the same samples every time, and an AudioBuffer a page
 writes reads back exactly as written. Zeros and wave peaks stay exact.
 
-diff --git a/third_party/blink/renderer/modules/webaudio/periodic_wave.cc b/third_party/blink/renderer/modules/webaudio/periodic_wave.cc
-index fee5dd8..894625c 100644
---- a/third_party/blink/renderer/modules/webaudio/periodic_wave.cc
-+++ b/third_party/blink/renderer/modules/webaudio/periodic_wave.cc
-@@ -30,10 +30,13 @@
- 
+diff --git a/third_party/blink/renderer/modules/webaudio/periodic_wave_handler.cc b/third_party/blink/renderer/modules/webaudio/periodic_wave_handler.cc
+index 1f58d88d56..dc1e7bc0e5 100644
+--- a/third_party/blink/renderer/modules/webaudio/periodic_wave_handler.cc
++++ b/third_party/blink/renderer/modules/webaudio/periodic_wave_handler.cc
+@@ -7,10 +7,12 @@
  #include <algorithm>
  #include <array>
-+#include <cmath>
+ #include <cmath>
 +#include <cstdlib>
  #include <memory>
+ #include <numbers>
  
- #include "base/bit_cast.h"
  #include "base/apostate/profile.h"
 +#include "base/apostate/profile_noise.h"
- #include "base/compiler_specific.h"
+ #include "base/bit_cast.h"
+ #include "base/check_op.h"
  #include "base/containers/span.h"
- #include "build/build_config.h"
-@@ -68,6 +71,36 @@ constexpr unsigned kMaxPeriodicWaveSize = 16384;
- 
- constexpr float kCentsPerRange = 1200 / kNumberOfOctaveBands;
+@@ -54,6 +56,36 @@ constexpr unsigned GetPeriodicWaveSize(float sample_rate) {
+   return kMaxPeriodicWaveSize;
+ }
  
 +// AliasMode: with --fingerprint-noise, each entry of a band-limited table
 +// moves by at most two units in the last place, in a pattern fixed per
@@ -63,11 +62,11 @@ index fee5dd8..894625c 100644
 +
  }  // namespace
  
- PeriodicWave* PeriodicWave::Create(BaseAudioContext& context,
-@@ -506,6 +539,7 @@ bool PeriodicWaveImpl::CreateBandLimitedTables(
+ scoped_refptr<PeriodicWaveHandler> PeriodicWaveHandler::Create(
+@@ -375,6 +407,7 @@ bool PeriodicWaveHandler::CreateBandLimitedTables(
  
      // Apply normalization scale.
-     vector_math::Vsmul(data_span, normalization_scale, data_span, fft_size);
+     vector_math::Vsmul(data_span, normalization_scale, data_span);
 +    PerturbBandLimitedTable(data_span, range_index);
    }
    return true;

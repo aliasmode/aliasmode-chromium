@@ -120,7 +120,7 @@ index a4ef2af8bb..0dccb32222 100644
    std::vector<SpeechVoice> speech_voices_;
    std::optional<std::string> timezone_;
 diff --git a/content/browser/font_access/font_enumeration_cache.cc b/content/browser/font_access/font_enumeration_cache.cc
-index 42fd2febe9..ae3f52fbb5 100644
+index 4a8cc7caec..32d1874d6e 100644
 --- a/content/browser/font_access/font_enumeration_cache.cc
 +++ b/content/browser/font_access/font_enumeration_cache.cc
 @@ -10,6 +10,7 @@
@@ -128,10 +128,10 @@ index 42fd2febe9..ae3f52fbb5 100644
  #include <utility>
  
 +#include "base/apostate/profile.h"
+ #include "base/i18n/icubridge/default_icu_locale.h"
+ #include "base/i18n/language_tag.h"
  #include "base/i18n/rtl.h"
- #include "base/memory/read_only_shared_memory_region.h"
- #include "base/memory/scoped_refptr.h"
-@@ -84,6 +85,27 @@ void FontEnumerationCache::BuildEnumerationCache(
+@@ -87,6 +88,27 @@ void FontEnumerationCache::BuildEnumerationCache(
      return;
    }
  

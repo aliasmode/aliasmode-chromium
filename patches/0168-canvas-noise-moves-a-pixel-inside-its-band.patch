@@ -1006,10 +1006,10 @@ index 67d3c8f..13a599a 100644
    SkPixmap data_pixmap = data->GetSkPixmap();
  
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-index 5d6224e..a6b36b5 100644
+index 7b1e125b74..f142739e6f 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-@@ -831,6 +831,7 @@ void Canvas2DRecorderContext::ResetInternal() {
+@@ -839,6 +839,7 @@ void Canvas2DRecorderContext::ResetState() {
    state_stack_.resize(1);
    state_stack_.front() = MakeGarbageCollected<CanvasRenderingContext2DState>();
    layer_count_ = 0;
@@ -1017,7 +1017,7 @@ index 5d6224e..a6b36b5 100644
    SetIsTransformInvertible(true);
  
    CanvasPath::Clear();
-@@ -1749,6 +1750,27 @@ void Canvas2DRecorderContext::fillRect(double x,
+@@ -1770,6 +1771,27 @@ void Canvas2DRecorderContext::fillRect(double x,
    CanvasRenderingContext::AdjustRectForCanvas(x, y, width, height);
    gfx::RectF rect(ClampTo<float>(x), ClampTo<float>(y), ClampTo<float>(width),
                    ClampTo<float>(height));
@@ -1045,17 +1045,17 @@ index 5d6224e..a6b36b5 100644
    Draw<OverdrawOp::kNone>(
        /*draw_func=*/
        [rect](MemoryManagedPaintCanvas* c, const cc::PaintFlags* flags) {
-@@ -1759,6 +1781,9 @@ void Canvas2DRecorderContext::fillRect(double x,
+@@ -1780,6 +1802,9 @@ void Canvas2DRecorderContext::fillRect(double x,
        has_pattern ? CanvasRenderingContext2DState::kNonOpaqueImage
                    : CanvasRenderingContext2DState::kNoImage,
-       CanvasPerformanceMonitor::DrawType::kRectangle);
+       CanvasPerformanceMonitor::DrawType::kRectangle, /*resolve_filter=*/true);
 +  if (exact) {
 +    apostate_drawn_ = drawn_before;
 +  }
  }
  
  static void StrokeRectOnCanvas(const gfx::RectF& rect,
-@@ -1981,6 +2006,11 @@ void Canvas2DRecorderContext::clearRect(double x,
+@@ -2002,6 +2027,11 @@ void Canvas2DRecorderContext::clearRect(double x,
        host->ClearRenderedText(canvas_clear_rect);
      }
    }
@@ -1068,10 +1068,10 @@ index 5d6224e..a6b36b5 100644
      CheckOverdraw(&clear_flags, CanvasRenderingContext2DState::kNoImage,
                    OverdrawOp::kClearRect);
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-index 739a7a7..945ba48 100644
+index f91372d35f..a006f79b79 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-@@ -177,6 +177,11 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+@@ -178,6 +178,11 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
    // draw the bitmap.
    void endLayer(ExceptionState& exception_state);
    int LayerCount() const { return layer_count_; }
@@ -1082,8 +1082,8 @@ index 739a7a7..945ba48 100644
 +  bool ApostateDrawn() const { return apostate_drawn_; }
    virtual void reset();          // Called by the javascript interface
    virtual void ResetInternal();  // Called from within blink
- 
-@@ -439,6 +444,8 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+   void ClearCanvas(gfx::Size size);
+@@ -443,6 +448,8 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
    unsigned max_state_stack_depth_ = 1;
    // Counts how many states have been pushed with BeginLayer.
    int layer_count_ = 0;
@@ -1092,14 +1092,14 @@ index 739a7a7..945ba48 100644
    AntiAliasingMode clip_antialiasing_ = kNotAntiAliased;
    // The paint worklet canvas operates on CSS pixels, and that's different than
    // the HTML canvas which operates on physical pixels. In other words, the
-@@ -863,6 +870,7 @@ void Canvas2DRecorderContext::Draw(
-   if (!paint_canvas || !paint_canvas->getDeviceClipBounds(&clip_bounds)) {
-     return;
+@@ -908,6 +915,7 @@ void Canvas2DRecorderContext::CompositedDraw(
+     }
+     c->restore();
    }
 +  apostate_drawn_ = true;
  
-   if (GetState().IsFilterUnresolved()) [[unlikely]] {
-     // Resolving a filter requires allocating garbage-collected objects.
+   composite_flags.setImageFilter(std::move(canvas_filter));
+   c->saveLayer(composite_flags);
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h
 index 57940e6..cfa0ac9 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h
@@ -1113,17 +1113,14 @@ index 57940e6..cfa0ac9 100644
  
    void WillDrawImage(CanvasImageSource*, bool image_is_texture_backed) final;
 diff --git a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
-index fef2c73..b4df000 100644
+index e29a07b6fe..07b0b93365 100644
 --- a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
 +++ b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
-@@ -151,6 +151,7 @@ class MODULES_EXPORT OffscreenCanvasRenderingContext2D final
-   void FinalizeFrame(FlushReason) final;
+@@ -138,3 +138,4 @@ class MODULES_EXPORT OffscreenCanvasRenderingContext2D final
+ }  // namespace blink
  
-   bool IsPaintable() const final;
+ #endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_CANVAS_OFFSCREENCANVAS2D_OFFSCREEN_CANVAS_RENDERING_CONTEXT_2D_H_
 +  bool ApostateReadbackNoised() const override { return ApostateDrawn(); }
- 
-   scoped_refptr<CanvasResource> ProduceCanvasResource(FlushReason);
- 
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_readback_noise.cc b/third_party/blink/renderer/modules/webgl/webgl_readback_noise.cc
 index 0235130..774f0df 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_readback_noise.cc

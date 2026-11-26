@@ -55,7 +55,7 @@ index 4c856b5978..e14ab5210c 100644
    std::optional<uint32_t> css_highlight_text_argb_;
    std::string source_id_;
 diff --git a/chrome/browser/net/profile_network_context_service.cc b/chrome/browser/net/profile_network_context_service.cc
-index 67be696b30..70d762cae8 100644
+index 31b1f2b2b0..1393945538 100644
 --- a/chrome/browser/net/profile_network_context_service.cc
 +++ b/chrome/browser/net/profile_network_context_service.cc
 @@ -4,6 +4,8 @@
@@ -65,9 +65,9 @@ index 67be696b30..70d762cae8 100644
 +#include "base/apostate/profile.h"
 +
  #include <memory>
+ #include <optional>
  #include <string>
- #include <string_view>
-@@ -211,8 +213,17 @@ std::vector<std::string> TranslateStringArray(const base::ListValue& list) {
+@@ -206,8 +208,17 @@ std::vector<std::string> TranslateStringArray(const base::ListValue& list) {
  }
  
  std::string ComputeAcceptLanguageFromPref(const std::string& language_pref) {
@@ -88,7 +88,7 @@ index 67be696b30..70d762cae8 100644
  }
  
 diff --git a/chrome/browser/renderer_preferences_util.cc b/chrome/browser/renderer_preferences_util.cc
-index 2b542a4814..f1d68d2945 100644
+index 8a64a3bcb6..343fc14881 100644
 --- a/chrome/browser/renderer_preferences_util.cc
 +++ b/chrome/browser/renderer_preferences_util.cc
 @@ -4,6 +4,8 @@
@@ -100,7 +100,7 @@ index 2b542a4814..f1d68d2945 100644
  #include <stdint.h>
  
  #include <string>
-@@ -204,8 +206,19 @@ void UpdateFromSystemSettings(blink::RendererPreferences* prefs,
+@@ -205,8 +207,19 @@ void UpdateFromSystemSettings(blink::RendererPreferences* prefs,
                   &prefs->webrtc_udp_min_port, &prefs->webrtc_udp_max_port);
    prefs->webrtc_local_ips_allowed_urls = GetLocalIpsAllowedUrls(
        pref_service->GetList(prefs::kWebRtcLocalIpsAllowedUrls));

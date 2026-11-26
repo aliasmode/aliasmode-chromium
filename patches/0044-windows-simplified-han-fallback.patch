@@ -8,10 +8,10 @@ Each candidate must be installed and cover the glyph. Other scripts,
 other profiles and runs without a profile keep the Linux path.
 
 diff --git a/third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc b/third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc
-index 0880cdb41c..61dd89cef3 100644
+index 3913c7391f..c9f34ea2c7 100644
 --- a/third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc
 +++ b/third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc
-@@ -24,16 +24,65 @@
+@@ -24,6 +24,10 @@
  
  #include "third_party/blink/renderer/platform/fonts/font_cache.h"
  
@@ -22,9 +22,10 @@ index 0880cdb41c..61dd89cef3 100644
  #include "build/build_config.h"
  #include "third_party/blink/public/platform/linux/web_sandbox_support.h"
  #include "third_party/blink/public/platform/platform.h"
- #include "third_party/blink/renderer/platform/fonts/font_fallback_priority.h"
- #include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
+@@ -32,10 +36,55 @@
  #include "third_party/blink/renderer/platform/fonts/simple_font_data.h"
+ #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+ #include "third_party/blink/renderer/platform/text/character.h"
 +#include "third_party/blink/renderer/platform/text/layout_locale.h"
 +#include "third_party/skia/include/core/SkTypeface.h"
  #include "ui/gfx/font_fallback_linux.h"
@@ -77,8 +78,8 @@ index 0880cdb41c..61dd89cef3 100644
  static AtomicString& MutableSystemFontFamily() {
    DEFINE_THREAD_SAFE_STATIC_LOCAL(AtomicString, system_font_family, ());
    return system_font_family;
-@@ -86,6 +135,27 @@ const SimpleFontData* FontCache::PlatformFallbackFontForCharacter(
-       return font_data;
+@@ -106,6 +155,27 @@ const SimpleFontData* FontCache::PlatformFallbackFontForCharacter(
+     }
    }
  
 +  if (UseWindowsSimplifiedHanFallback(font_description, c)) {

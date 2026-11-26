@@ -241,10 +241,10 @@ index 13a599a..03f3506 100644
  
    SkPixmap data_pixmap = data->GetSkPixmap();
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-index a6b36b5..c459357 100644
+index f142739e6f..af3c39934d 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
-@@ -832,6 +832,7 @@ void Canvas2DRecorderContext::ResetInternal() {
+@@ -840,6 +840,7 @@ void Canvas2DRecorderContext::ResetState() {
    state_stack_.front() = MakeGarbageCollected<CanvasRenderingContext2DState>();
    layer_count_ = 0;
    apostate_drawn_ = false;
@@ -252,7 +252,7 @@ index a6b36b5..c459357 100644
    SetIsTransformInvertible(true);
  
    CanvasPath::Clear();
-@@ -1754,6 +1755,7 @@ void Canvas2DRecorderContext::fillRect(double x,
+@@ -1775,6 +1776,7 @@ void Canvas2DRecorderContext::fillRect(double x,
    // shadowed, filtered or clipped, comes out the same on every machine, so it
    // does not count as drawn (ApostateDrawn()).
    const bool drawn_before = apostate_drawn_;
@@ -260,15 +260,15 @@ index a6b36b5..c459357 100644
    const AffineTransform& transform = GetTransform();
    const cc::PaintFlags* fill_flags = state.GetFlags(
        CanvasRenderingContext2DState::kFillPaintType, kDrawForegroundOnly,
-@@ -1783,6 +1785,7 @@ void Canvas2DRecorderContext::fillRect(double x,
-       CanvasPerformanceMonitor::DrawType::kRectangle);
+@@ -1804,6 +1806,7 @@ void Canvas2DRecorderContext::fillRect(double x,
+       CanvasPerformanceMonitor::DrawType::kRectangle, /*resolve_filter=*/true);
    if (exact) {
      apostate_drawn_ = drawn_before;
 +    apostate_kept_ = kept_before;
    }
  }
  
-@@ -2010,6 +2013,7 @@ void Canvas2DRecorderContext::clearRect(double x,
+@@ -2031,6 +2034,7 @@ void Canvas2DRecorderContext::clearRect(double x,
    if (!GetState().HasClip() && GetTransform().MapRect(rect).Contains(
                                     gfx::RectF(0, 0, Width(), Height()))) {
      apostate_drawn_ = false;
@@ -277,10 +277,10 @@ index a6b36b5..c459357 100644
    if (RectContainsTransformedRect(rect, clip_bounds)) {
      CheckOverdraw(&clear_flags, CanvasRenderingContext2DState::kNoImage,
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-index 945ba48..4476b70 100644
+index a006f79b79..4e20b4d792 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-@@ -54,6 +54,7 @@
+@@ -55,6 +55,7 @@
  #include "third_party/skia/include/core/SkPathTypes.h"
  #include "third_party/skia/include/core/SkRect.h"
  #include "third_party/skia/include/core/SkRefCnt.h"
@@ -288,7 +288,7 @@ index 945ba48..4476b70 100644
  #include "ui/gfx/geometry/rect_f.h"
  #include "ui/gfx/geometry/skia_conversions.h"
  
-@@ -182,6 +183,11 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+@@ -183,6 +184,11 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
    // since the canvas was last reset. A canvas holding only what the page
    // wrote itself reads back exactly under --fingerprint-noise.
    bool ApostateDrawn() const { return apostate_drawn_; }
@@ -299,8 +299,8 @@ index 945ba48..4476b70 100644
 +  }
    virtual void reset();          // Called by the javascript interface
    virtual void ResetInternal();  // Called from within blink
- 
-@@ -446,6 +452,8 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
+   void ClearCanvas(gfx::Size size);
+@@ -450,6 +456,8 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
    int layer_count_ = 0;
    // See ApostateDrawn().
    bool apostate_drawn_ = false;
@@ -309,14 +309,14 @@ index 945ba48..4476b70 100644
    AntiAliasingMode clip_antialiasing_ = kNotAntiAliased;
    // The paint worklet canvas operates on CSS pixels, and that's different than
    // the HTML canvas which operates on physical pixels. In other words, the
-@@ -871,6 +879,7 @@ void Canvas2DRecorderContext::Draw(
-     return;
+@@ -916,6 +924,7 @@ void Canvas2DRecorderContext::CompositedDraw(
+     c->restore();
    }
    apostate_drawn_ = true;
 +  apostate_kept_.setEmpty();
  
-   if (GetState().IsFilterUnresolved()) [[unlikely]] {
-     // Resolving a filter requires allocating garbage-collected objects.
+   composite_flags.setImageFilter(std::move(canvas_filter));
+   c->saveLayer(composite_flags);
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h
 index cfa0ac9..980888a 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h
@@ -330,14 +330,11 @@ index cfa0ac9..980888a 100644
  
    void WillDrawImage(CanvasImageSource*, bool image_is_texture_backed) final;
 diff --git a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
-index b4df000..2888696 100644
+index 07b0b93365..d3740e0147 100644
 --- a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
 +++ b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
-@@ -152,6 +152,7 @@ class MODULES_EXPORT OffscreenCanvasRenderingContext2D final
+@@ -139,3 +139,4 @@ class MODULES_EXPORT OffscreenCanvasRenderingContext2D final
  
-   bool IsPaintable() const final;
+ #endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_CANVAS_OFFSCREENCANVAS2D_OFFSCREEN_CANVAS_RENDERING_CONTEXT_2D_H_
    bool ApostateReadbackNoised() const override { return ApostateDrawn(); }
 +  const SkRegion* ApostateKeptPixels() const override { return ApostateKept(); }
- 
-   scoped_refptr<CanvasResource> ProduceCanvasResource(FlushReason);
- 

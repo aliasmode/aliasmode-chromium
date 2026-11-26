@@ -11,7 +11,7 @@ The profile fields theme.highlight_argb and theme.highlight_text_argb
 are parsed and ignored.
 
 diff --git a/third_party/blink/renderer/core/layout/layout_theme.cc b/third_party/blink/renderer/core/layout/layout_theme.cc
-index febda48745..4411fc11cf 100644
+index e654330dcd..02d98f6f61 100644
 --- a/third_party/blink/renderer/core/layout/layout_theme.cc
 +++ b/third_party/blink/renderer/core/layout/layout_theme.cc
 @@ -21,6 +21,9 @@
@@ -22,9 +22,9 @@ index febda48745..4411fc11cf 100644
 +#include <string>
 +
  #include "base/apostate/profile.h"
+ #include "base/no_destructor.h"
  #include "build/build_config.h"
- #include "third_party/blink/public/common/renderer_preferences/renderer_preferences.h"
-@@ -164,6 +167,37 @@ bool SystemAccentColorAllowed() {
+@@ -176,6 +179,37 @@ bool SystemAccentColorAllowed() {
           RuntimeEnabledFeatures::CSSAccentColorKeywordEnabled();
  }
  
@@ -62,7 +62,7 @@ index febda48745..4411fc11cf 100644
  }  // namespace
  
  LayoutTheme& LayoutTheme::GetTheme() {
-@@ -813,6 +847,10 @@ Color LayoutTheme::SystemColorFromColorProvider(
+@@ -832,6 +866,10 @@ Color LayoutTheme::SystemColorFromColorProvider(
            color_provider->GetColor(ui::kColorCssSystemGrayText);
        break;
      case CSSValueID::kHighlight:
@@ -73,7 +73,7 @@ index febda48745..4411fc11cf 100644
        return SystemHighlightFromColorProvider(color_scheme, color_provider);
      case CSSValueID::kHighlighttext:
        system_theme_color =
-@@ -863,26 +901,6 @@ Color LayoutTheme::SystemColorFromColorProvider(
+@@ -881,26 +919,6 @@ Color LayoutTheme::SystemColorFromColorProvider(
  Color LayoutTheme::SystemHighlightFromColorProvider(
      mojom::blink::ColorScheme color_scheme,
      const ui::ColorProvider* color_provider) const {

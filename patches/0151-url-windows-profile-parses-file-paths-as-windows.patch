@@ -22,18 +22,18 @@ first, so ordinary URLs never read the flag. Windows builds keep
 upstream behaviour.
 
 diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
-index 9e1e86f265..79263ea11c 100644
+index ed9f3cf4c7..bed5138cf0 100644
 --- a/chrome/app/chrome_main_delegate.cc
 +++ b/chrome/app/chrome_main_delegate.cc
 @@ -92,6 +92,7 @@
+ #include "third_party/blink/public/common/features.h"
+ #include "ui/base/l10n/l10n_util.h"
  #include "ui/base/resource/resource_bundle.h"
++#include "url/url_file_semantics.h"
  #include "ui/base/resource/scoped_startup_resource_bundle.h"
  #include "ui/base/ui_base_switches.h"
-+#include "url/url_file_semantics.h"
- 
- 
- #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || \
-@@ -1559,6 +1560,16 @@ void ChromeMainDelegate::PreSandboxStartup() {
+ #include "ui/webui/buildflags.h"
+@@ -1664,6 +1665,16 @@ void ChromeMainDelegate::PreSandboxStartup() {
      base::apostate::InstallComposedProfile(user_data_dir);
    }
  

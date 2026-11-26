@@ -64,7 +64,7 @@ index c482e2baa2..77bd5b3bad 100644
    std::optional<bool> prefers_dark_;
    std::optional<std::string> accept_languages_;
 diff --git a/ui/gl/gl_gl_api_implementation.cc b/ui/gl/gl_gl_api_implementation.cc
-index 3ebdfb1937..5af1edaf9b 100644
+index e708504315..4a2e3c5367 100644
 --- a/ui/gl/gl_gl_api_implementation.cc
 +++ b/ui/gl/gl_gl_api_implementation.cc
 @@ -4,6 +4,8 @@
@@ -76,7 +76,7 @@ index 3ebdfb1937..5af1edaf9b 100644
  #include "base/apostate/profile.h"
  #include "base/no_destructor.h"
  
-@@ -236,12 +238,82 @@ void RealGLApi::Initialize(DriverGL* driver) {
+@@ -241,6 +243,39 @@ void RealGLApi::Initialize(DriverGL* driver) {
    InitializeBase(driver);
  }
  
@@ -114,15 +114,14 @@ index 3ebdfb1937..5af1edaf9b 100644
 +}  // namespace
 +
  void RealGLApi::glGetIntegervFn(GLenum pname, GLint* params) {
-   if (pname == GL_NUM_EXTENSIONS && disabled_exts_.size()) {
-     InitializeFilteredExtensionsIfNeeded();
-     *params = static_cast<GLint>(filtered_exts_.size());
--  } else {
--    GLApiBase::glGetIntegervFn(pname, params);
-+    return;
-+  }
+   if (disabled_exts_.size()) {
+     if (pname == GL_NUM_EXTENSIONS) {
+@@ -254,7 +289,44 @@ void RealGLApi::glGetIntegervFn(GLenum pname, GLint* params) {
+       return;
+     }
+   }
 +
-+  GLApiBase::glGetIntegervFn(pname, params);
+   GLApiBase::glGetIntegervFn(pname, params);
 +
 +  // Serve the claimed device's limit, but never above what this driver can
 +  // actually do. The clamp is the point: a limit is the one class of value a
@@ -158,6 +157,7 @@ index 3ebdfb1937..5af1edaf9b 100644
 +                      "claim.";
 +    }
 +    return;
-   }
++  }
  }
  
+ const GLubyte* RealGLApi::glGetStringFn(GLenum name) {

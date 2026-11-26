@@ -409,18 +409,18 @@ index b5de18f72e..4d7ee62d7d 100644
    bool paused_ = false;
  
 diff --git a/content/browser/speech/tts_controller_unittest.cc b/content/browser/speech/tts_controller_unittest.cc
-index 12c3b0658b..c30a72b02f 100644
+index 135b451dcb..a8533db1af 100644
 --- a/content/browser/speech/tts_controller_unittest.cc
 +++ b/content/browser/speech/tts_controller_unittest.cc
-@@ -9,6 +9,7 @@
- #include "base/check.h"
+@@ -12,6 +12,7 @@
+ #include "base/i18n/language_tag.h"
  #include "base/memory/ptr_util.h"
  #include "base/memory/raw_ptr.h"
 +#include "base/time/time.h"
  #include "base/values.h"
  #include "build/build_config.h"
  #include "content/browser/speech/tts_controller_impl.h"
-@@ -294,6 +295,13 @@ class TtsControllerTest : public testing::Test {
+@@ -297,6 +298,13 @@ class TtsControllerTest : public testing::Test {
    void SetUp() override {
      original_locale_ =
          TestContentBrowserClient::GetInstance()->GetApplicationLocale();
@@ -434,8 +434,8 @@ index 12c3b0658b..c30a72b02f 100644
      controller_ = std::make_unique<TestTtsControllerImpl>();
      platform_impl_ = std::make_unique<MockTtsPlatformImpl>(controller_.get());
      browser_context_ = std::make_unique<TestBrowserContext>();
-@@ -314,12 +322,14 @@ class TtsControllerTest : public testing::Test {
-         original_locale_);
+@@ -317,12 +325,14 @@ class TtsControllerTest : public testing::Test {
+         *original_locale_);
      if (controller())
        controller()->RemoveVoicesChangedDelegate(&voices_changed_);
 +    base::apostate::Profile::SetForTesting(nullptr);
@@ -449,7 +449,7 @@ index 12c3b0658b..c30a72b02f 100644
  
  #if BUILDFLAG(IS_CHROMEOS)
    MockTtsControllerDelegate* delegate() { return &delegate_; }
-@@ -356,7 +366,11 @@ class TtsControllerTest : public testing::Test {
+@@ -359,7 +369,11 @@ class TtsControllerTest : public testing::Test {
    bool IsUtteranceListEmpty() { return controller()->QueueSize() == 0; }
  
   private:
@@ -461,8 +461,8 @@ index 12c3b0658b..c30a72b02f 100644
 +      base::test::TaskEnvironment::TimeSource::MOCK_TIME};
    RenderViewHostTestEnabler rvh_enabler_;
  
-   std::string original_locale_;
-@@ -1630,7 +1644,11 @@ TEST_F(TtsControllerTest, ProfileUnknownLocalityPreservesRemoteProviderMetadata)
+   std::optional<base::i18n::LanguageTag> original_locale_;
+@@ -1647,7 +1661,11 @@ TEST_F(TtsControllerTest, ProfileUnknownLocalityPreservesRemoteProviderMetadata)
    std::vector<VoiceData> voices;
    controller()->GetVoices(browser_context(), GURL(), &voices);
  #if BUILDFLAG(IS_ANDROID)
@@ -475,7 +475,7 @@ index 12c3b0658b..c30a72b02f 100644
  #else
    ASSERT_EQ(1u, voices.size());
    EXPECT_TRUE(voices[0].remote);
-@@ -1638,25 +1656,141 @@ TEST_F(TtsControllerTest, ProfileUnknownLocalityPreservesRemoteProviderMetadata)
+@@ -1655,25 +1673,141 @@ TEST_F(TtsControllerTest, ProfileUnknownLocalityPreservesRemoteProviderMetadata)
  #endif
  }
  

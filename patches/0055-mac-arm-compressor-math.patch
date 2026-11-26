@@ -173,11 +173,11 @@ index 8aa8c68156..68e47119fd 100644
      knee_ = k;
    }
 diff --git a/third_party/blink/renderer/platform/audio/dynamics_compressor.h b/third_party/blink/renderer/platform/audio/dynamics_compressor.h
-index 92fa1f9501..23a3242b92 100644
+index 63ad543e0e..a2eaa7dd35 100644
 --- a/third_party/blink/renderer/platform/audio/dynamics_compressor.h
 +++ b/third_party/blink/renderer/platform/audio/dynamics_compressor.h
-@@ -83,6 +83,15 @@ class PLATFORM_EXPORT DynamicsCompressor final {
-   bool RequiresTailProcessing() const;
+@@ -79,6 +79,15 @@ class PLATFORM_EXPORT DynamicsCompressor final {
+   double LatencyTime() const;
  
   private:
 +  float LinearToDecibels(float) const;

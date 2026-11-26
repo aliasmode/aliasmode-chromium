@@ -82,18 +82,18 @@ index 0776033183..575a00e917 100644
  };
  
 diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
-index 4a54b67dcf..92df7464bc 100644
+index 21219ade6f..b3c982649f 100644
 --- a/components/embedder_support/user_agent_utils.cc
 +++ b/components/embedder_support/user_agent_utils.cc
-@@ -13,6 +13,7 @@
+@@ -14,6 +14,7 @@
  #include <vector>
  
  #include "base/android/device_info.h"
 +#include "base/apostate/profile.h"
  #include "base/command_line.h"
- #include "base/compiler_specific.h"
  #include "base/feature_list.h"
-@@ -162,10 +163,12 @@ const blink::UserAgentBrandList GetUserAgentBrandList(
+ #include "base/logging.h"
+@@ -158,10 +159,12 @@ const blink::UserAgentBrandList GetUserAgentBrandList(
    int major_version_number;
    bool parse_result = base::StringToInt(major_version, &major_version_number);
    DCHECK(parse_result);
@@ -110,7 +110,7 @@ index 4a54b67dcf..92df7464bc 100644
  
    std::string brand_version =
        output_version_type == blink::UserAgentBrandVersionType::kFullVersion
-@@ -673,6 +676,27 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+@@ -644,6 +647,27 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
    metadata.mobile = GetMobileBitForUAMetadata();
    metadata.platform = GetPlatformForUAMetadata();
  
@@ -138,7 +138,7 @@ index 4a54b67dcf..92df7464bc 100644
    // For users providing a valid user-agent override via the command line:
    // If kUACHOverrideBlank is enabled, set user-agent metadata with the
    // default blank values, otherwise return the default UserAgentMetadata values
-@@ -700,6 +724,27 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+@@ -671,6 +695,27 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
    metadata.bitness = GetCpuBitness();
    metadata.wow64 = IsWoW64();
    metadata.platform_version = GetPlatformVersion();

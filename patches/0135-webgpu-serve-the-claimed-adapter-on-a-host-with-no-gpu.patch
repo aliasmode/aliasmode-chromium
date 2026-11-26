@@ -89,10 +89,10 @@ index 91b15d3396..2231f3cff6 100644
  #else
          return false;
 diff --git a/gpu/command_buffer/service/webgpu_decoder_impl.cc b/gpu/command_buffer/service/webgpu_decoder_impl.cc
-index 5094386246..09fbf4eb58 100644
+index 3866187621..858568c544 100644
 --- a/gpu/command_buffer/service/webgpu_decoder_impl.cc
 +++ b/gpu/command_buffer/service/webgpu_decoder_impl.cc
-@@ -1146,10 +1146,8 @@ WebGPUDecoderImpl::WebGPUDecoderImpl(
+@@ -1187,10 +1187,8 @@ WebGPUDecoderImpl::WebGPUDecoderImpl(
  
    dawn::native::DawnInstanceDescriptor provider_descriptor;
  #if BUILDFLAG(IS_LINUX)
@@ -102,9 +102,9 @@ index 5094386246..09fbf4eb58 100644
 -        .platform = *profile->ua_platform(),
 -        .angle_is_swiftshader = gl::GetANGLEImplementation() == gl::ANGLEImplementation::kSwiftShader,
          .shared_context_is_gl = shared_context_state_ && shared_context_state_->GrContextIsGL(),
-         .safe = safety_level_ == SafetyLevel::kSafe,
+         .safe = safety_level() == SafetyLevel::kSafe,
          .has_dawn_overrides = !require_enabled_toggles_.empty() ||
-@@ -1157,6 +1155,7 @@ WebGPUDecoderImpl::WebGPUDecoderImpl(
+@@ -1198,6 +1196,7 @@ WebGPUDecoderImpl::WebGPUDecoderImpl(
          .force_compat = force_webgpu_compat_,
          .requested_adapter = use_webgpu_adapter_,
          .profile_declares_webgpu_adapter = ProfileDeclaresWebGPUAdapter(*profile),

@@ -10,7 +10,7 @@ uncovered character then follows a Windows machine's fallback choice
 wherever the host has that font.
 
 diff --git a/third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc b/third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc
-index 61dd89cef3..7b12ef1f52 100644
+index c9f34ea2c7..315f15eb20 100644
 --- a/third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc
 +++ b/third_party/blink/renderer/platform/fonts/linux/font_cache_linux.cc
 @@ -27,6 +27,7 @@
@@ -26,10 +26,10 @@ index 61dd89cef3..7b12ef1f52 100644
  #include "third_party/blink/renderer/platform/fonts/font_platform_data.h"
  #include "third_party/blink/renderer/platform/fonts/simple_font_data.h"
 +#include "third_party/blink/renderer/platform/text/character.h"
+ #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+ #include "third_party/blink/renderer/platform/text/character.h"
  #include "third_party/blink/renderer/platform/text/layout_locale.h"
- #include "third_party/skia/include/core/SkTypeface.h"
- #include "ui/gfx/font_fallback_linux.h"
-@@ -42,22 +44,266 @@ namespace blink {
+@@ -44,22 +46,266 @@ namespace blink {
  
  namespace {
  
@@ -305,8 +305,8 @@ index 61dd89cef3..7b12ef1f52 100644
  }
  
  bool TypefaceHasFamily(SkTypeface* face, const char* family) {
-@@ -135,25 +381,25 @@ const SimpleFontData* FontCache::PlatformFallbackFontForCharacter(
-       return font_data;
+@@ -155,25 +401,25 @@ const SimpleFontData* FontCache::PlatformFallbackFontForCharacter(
+     }
    }
  
 -  if (UseWindowsSimplifiedHanFallback(font_description, c)) {

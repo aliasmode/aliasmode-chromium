@@ -316,11 +316,11 @@ index 0172067e82..70ee0b6a71 100644
  
    void quitMessageLoopIfAgentsFinishedInstrumentation();
 diff --git a/v8/src/inspector/value-mirror.cc b/v8/src/inspector/value-mirror.cc
-index 357c9a6571..b7f124c3b2 100644
+index b9fcf2bc09..256e46d05c 100644
 --- a/v8/src/inspector/value-mirror.cc
 +++ b/v8/src/inspector/value-mirror.cc
-@@ -268,6 +268,27 @@ bool isBuiltinGetter(v8::Local<v8::Function> function) {
-   return function->ScriptId() == v8::UnboundScript::kNoScriptId;
+@@ -329,6 +329,27 @@ bool isBuiltinGetter(v8::Local<v8::Function> function) {
+   return v8::debug::IsBuiltinOrApiFunction(function);
  }
  
 +// Reads one of an error's description properties without running page code.
@@ -347,12 +347,9 @@ index 357c9a6571..b7f124c3b2 100644
  v8::MaybeLocal<v8::Value> getErrorProperty(v8::Local<v8::Context> context,
                                             v8::Local<v8::Object> object,
                                             v8::Local<v8::String> name) {
-@@ -278,9 +299,11 @@ v8::MaybeLocal<v8::Value> getErrorProperty(v8::Local<v8::Context> context,
-   v8::Local<v8::Value> descriptor;
+@@ -340,7 +361,9 @@ v8::MaybeLocal<v8::Value> getErrorProperty(v8::Local<v8::Context> context,
    if (!object->GetOwnPropertyDescriptor(context, name).ToLocal(&descriptor)) {
-     tryCatch.Reset();
--    return object->Get(context, name);
-+    return v8::MaybeLocal<v8::Value>();
+     return v8::MaybeLocal<v8::Value>();
    }
 -  if (!descriptor->IsObject()) return object->Get(context, name);
 +  // No own property: declining here is what keeps a prototype accessor from
@@ -360,4 +357,4 @@ index 357c9a6571..b7f124c3b2 100644
 +  if (!descriptor->IsObject()) return v8::MaybeLocal<v8::Value>();
  
    v8::Local<v8::Object> descriptorObject = descriptor.As<v8::Object>();
-   v8::Local<v8::Value> getDescriptor;
+   v8::Maybe<bool> hasGet =

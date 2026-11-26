@@ -698,7 +698,7 @@ index 9ee9a24d24..27b3b3af5f 100644
                     P2PSocketDispatcher>
        network_notification_client_receiver_;
 diff --git a/third_party/webrtc/p2p/base/stun_port.cc b/third_party/webrtc/p2p/base/stun_port.cc
-index e35c9ca91f..edd1e0daeb 100644
+index 843c2121b6..1b661e3841 100644
 --- a/third_party/webrtc/p2p/base/stun_port.cc
 +++ b/third_party/webrtc/p2p/base/stun_port.cc
 @@ -240,6 +240,10 @@ bool UDPPort::Init() {
@@ -709,13 +709,13 @@ index e35c9ca91f..edd1e0daeb 100644
 +      this, [this](AsyncPacketSocket* socket, int error) {
 +        OnSocketClosed(socket, error);
 +      });
-   return true;
- }
- 
-@@ -250,12 +254,19 @@ UDPPort::~UDPPort() {
-   socket_->UnsubscribeSentPacket(this);
+   socket_->SubscribeCloseEvent(this,
+                                [this](AsyncPacketSocket* socket, int error) {
+                                  OnSocketClose(socket, error);
+@@ -255,12 +259,19 @@ UDPPort::~UDPPort() {
    socket_->UnsubscribeReadyToSend(this);
    socket_->UnsubscribeAddressReady(this);
+   socket_->UnsubscribeCloseEvent(this);
 +  socket_->UnsubscribeCloseEvent(this);
  }
  
@@ -732,7 +732,7 @@ index e35c9ca91f..edd1e0daeb 100644
    }
  }
  
-@@ -397,6 +408,26 @@ void UDPPort::OnLocalAddressReady(AsyncPacketSocket* /* socket */,
+@@ -402,6 +413,26 @@ void UDPPort::OnLocalAddressReady(AsyncPacketSocket* /* socket */,
    MaybePrepareStunCandidate();
  }
  

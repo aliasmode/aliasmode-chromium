@@ -418,7 +418,7 @@ index a4c787e6f8..97f3e65069 100644
  }
  
 diff --git a/ui/gl/gl_gl_api_implementation.h b/ui/gl/gl_gl_api_implementation.h
-index e80b612855..4bcfe1ecd8 100644
+index b305d7d67c..379b81bcd9 100644
 --- a/ui/gl/gl_gl_api_implementation.h
 +++ b/ui/gl/gl_gl_api_implementation.h
 @@ -6,6 +6,7 @@
@@ -429,9 +429,9 @@ index e80b612855..4bcfe1ecd8 100644
  #include <vector>
  
  #include "base/memory/raw_ptr.h"
-@@ -168,10 +169,12 @@ class GL_EXPORT RealGLApi : public GLApiBase {
-   // Compute |filtered_exts_| & |filtered_exts_str_| from |disabled_ext_|.
-   void InitializeFilteredExtensionsIfNeeded();
+@@ -173,10 +174,12 @@ class GL_EXPORT RealGLApi : public GLApiBase {
+   // from |disabled_exts_|.
+   void InitializeFilteredRequestableExtensionsIfNeeded();
  
 -  // True when the active backend enforces the limits it reports. Reads the
 -  // driver's own GL_RENDERER through GLApiBase, so it is not confused by the
@@ -446,8 +446,8 @@ index e80b612855..4bcfe1ecd8 100644
  
    const bool logging_enabled_;
    std::vector<std::string> disabled_exts_;
-@@ -180,6 +183,11 @@ class GL_EXPORT RealGLApi : public GLApiBase {
-   std::string filtered_exts_str_;
+@@ -188,6 +191,11 @@ class GL_EXPORT RealGLApi : public GLApiBase {
+   std::string filtered_requestable_exts_str_;
  
    std::unique_ptr<GLVersionInfo> version_;
 +

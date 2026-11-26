@@ -8,18 +8,18 @@ FFT plans are cached per size and mode. Other profiles keep the native
 planner.
 
 diff --git a/third_party/blink/renderer/platform/audio/fft_frame.cc b/third_party/blink/renderer/platform/audio/fft_frame.cc
-index 645b69682d..29964379ea 100644
+index d19707c8fe..9d1bd987bd 100644
 --- a/third_party/blink/renderer/platform/audio/fft_frame.cc
 +++ b/third_party/blink/renderer/platform/audio/fft_frame.cc
-@@ -31,6 +31,7 @@
- #include <complex>
+@@ -32,6 +32,7 @@
  #include <memory>
+ #include <numbers>
  
 +#include "base/apostate/profile.h"
  #include "base/check_op.h"
  #include "base/compiler_specific.h"
  #include "base/memory/ptr_util.h"
-@@ -52,6 +53,14 @@ unsigned CheckedFftSize(unsigned fft_size) {
+@@ -53,6 +54,14 @@ unsigned CheckedFftSize(unsigned fft_size) {
    return fft_size;
  }
  
@@ -34,7 +34,7 @@ index 645b69682d..29964379ea 100644
  }  // namespace
  
  bool FFTFrame::InitializeBuffers() {
-@@ -65,7 +74,8 @@ FFTFrame::FFTFrame(unsigned fft_size)
+@@ -66,7 +75,8 @@ FFTFrame::FFTFrame(unsigned fft_size)
  
  FFTFrame::FFTFrame(unsigned fft_size, bool allocate_buffers)
      : fft_size_(CheckedFftSize(fft_size)),

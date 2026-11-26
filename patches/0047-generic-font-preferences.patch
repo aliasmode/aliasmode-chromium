@@ -65,7 +65,7 @@ index 0d2f2244a9..082931e1a3 100644
    std::vector<SpeechVoice> speech_voices_;
    std::optional<std::string> timezone_;
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 448ed5078e..11e9ad76cd 100644
+index f738abd97b..bdf44e44ac 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -15,6 +15,7 @@
@@ -75,8 +75,8 @@ index 448ed5078e..11e9ad76cd 100644
 +#include "base/apostate/profile.h"
  #include "base/base_switches.h"
  #include "base/byte_size.h"
- #include "base/check_deref.h"
-@@ -4594,6 +4595,26 @@ void ChromeContentBrowserClient::OverrideWebPreferences(
+ #include "base/check.h"
+@@ -4780,6 +4781,26 @@ void ChromeContentBrowserClient::OverrideWebPreferences(
                                         &web_prefs->math_font_family_map);
    }
  

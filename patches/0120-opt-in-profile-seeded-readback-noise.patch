@@ -1010,18 +1010,18 @@ index 828f244d43..a20642cab3 100644
  
  unsigned ImageBitmap::width() const {
 diff --git a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
-index fab79aa8c5..36c166399c 100644
+index 5f1c6f5ed3..7964e2b9e6 100644
 --- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
 +++ b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
-@@ -18,6 +18,7 @@
- #include "third_party/blink/renderer/bindings/core/v8/v8_element_geometry_update_event_init.h"
+@@ -20,6 +20,7 @@
+ #include "third_party/blink/renderer/bindings/core/v8/v8_element_image_default_size.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_union_element_elementimage.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_update_element_geometry_options.h"
 +#include "third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h"
  #include "third_party/blink/renderer/core/css/css_font_selector.h"
  #include "third_party/blink/renderer/core/css/offscreen_font_selector.h"
  #include "third_party/blink/renderer/core/css/style_engine.h"
-@@ -383,6 +384,13 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
+@@ -387,6 +388,13 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
      // Undocumented exception (not in spec).
      exception_state.ThrowDOMException(DOMExceptionCode::kUnknownError,
                                        "ImageBitmap construction failed");
@@ -1035,7 +1035,7 @@ index fab79aa8c5..36c166399c 100644
    }
  
    return image;
-@@ -565,6 +573,10 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
+@@ -605,6 +613,10 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
    base::TimeTicks start_time = base::TimeTicks::Now();
    scoped_refptr<StaticBitmapImage> image_bitmap = context_->GetImage();
    if (image_bitmap) {
@@ -1776,10 +1776,10 @@ index 766e916ac5..baa2351d14 100644
  
  void WebGLRenderingContextBase::RenderbufferStorageImpl(
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_webgpu_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_webgpu_base.cc
-index 214305830a..4bce23499c 100644
+index 50e37bfe12..686afb8f91 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_webgpu_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_webgpu_base.cc
-@@ -29,6 +29,7 @@
+@@ -32,6 +32,7 @@
  #include "third_party/blink/renderer/modules/webgl/webgl_object.h"
  #include "third_party/blink/renderer/modules/webgl/webgl_program.h"
  #include "third_party/blink/renderer/modules/webgl/webgl_query.h"
@@ -1787,10 +1787,10 @@ index 214305830a..4bce23499c 100644
  #include "third_party/blink/renderer/modules/webgl/webgl_renderbuffer.h"
  #include "third_party/blink/renderer/modules/webgl/webgl_sampler.h"
  #include "third_party/blink/renderer/modules/webgl/webgl_shader.h"
-@@ -3834,6 +3835,19 @@ void WebGLRenderingContextWebGPUBase::readPixels(
-   driver_gl_.fn.glReadPixelsRobustANGLEFn(x, y, width, height, format, type,
-                                           bufSize, nullptr, nullptr, nullptr,
-                                           data_at_offset.data());
+@@ -3837,6 +3838,19 @@ void WebGLRenderingContextWebGPUBase::vertexAttribI4uiv(
+   // WebGL allows larger spans (reusing an array for different sizes to
+   // avoid repeated allocations). Extra elements are ignored.
+   if (v.size() < 4) {
 +
 +  // Apostate: same boundary as the GLES backend's ReadPixelsHelper -- the
 +  // caller's view is perturbed, the framebuffer is not. pixelStorei is not
@@ -1804,9 +1804,9 @@ index 214305830a..4bce23499c 100644
 +                                height, format, type,
 +                                WebGLImageConversion::PixelStoreParams());
 +  }
- }
- 
- // **************************************************************************
+     InsertGLError(GL_INVALID_VALUE, "vertexAttribI4uiv", "invalid size");
+     return;
+   }
 diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.h b/third_party/blink/renderer/platform/graphics/static_bitmap_image.h
 index 60de4ba88b..e1809a42be 100644
 --- a/third_party/blink/renderer/platform/graphics/static_bitmap_image.h

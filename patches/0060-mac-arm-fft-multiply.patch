@@ -21,10 +21,10 @@ index 05310ef7f7..d5786ae3f6 100644
      "audio/hrtf_database.h",
      "audio/hrtf_database_loader.cc",
 diff --git a/third_party/blink/renderer/platform/audio/fft_frame.cc b/third_party/blink/renderer/platform/audio/fft_frame.cc
-index 29964379ea..ce12c87d56 100644
+index 9d1bd987bd..bfabeeca5e 100644
 --- a/third_party/blink/renderer/platform/audio/fft_frame.cc
 +++ b/third_party/blink/renderer/platform/audio/fft_frame.cc
-@@ -34,7 +34,9 @@
+@@ -35,7 +35,9 @@
  #include "base/apostate/profile.h"
  #include "base/check_op.h"
  #include "base/compiler_specific.h"
@@ -34,7 +34,7 @@ index 29964379ea..ce12c87d56 100644
  #include "third_party/blink/renderer/platform/audio/vector_math.h"
  #include "third_party/blink/renderer/platform/wtf/math_extras.h"
  #include "third_party/fdlibm/ieee754.h"
-@@ -76,6 +78,17 @@ FFTFrame::FFTFrame(unsigned fft_size, bool allocate_buffers)
+@@ -77,6 +79,17 @@ FFTFrame::FFTFrame(unsigned fft_size, bool allocate_buffers)
      : fft_size_(CheckedFftSize(fft_size)),
        rust_fft_(blink::rust_fft::rustfft_new_for_profile(fft_size_,
                                                           MacArmMode())) {
@@ -52,13 +52,12 @@ index 29964379ea..ce12c87d56 100644
    if (allocate_buffers) {
      CHECK(InitializeBuffers());
    }
-@@ -368,13 +381,22 @@ void FFTFrame::Multiply(const FFTFrame& frame) {
-   DCHECK_GE(real2.size(), packed_size);
-   DCHECK_GE(imag2.size(), packed_size);
+@@ -361,12 +374,21 @@ void FFTFrame::Multiply(const FFTFrame& frame) {
+   float real0 = real1[0];
+   float imag0 = imag1[0];
  
 -  vector_math::Zvmul(real1.as_span(), imag1.as_span(), real2.as_span(),
--                     imag2.as_span(), real1.as_span(), imag1.as_span(),
--                     packed_size);
+-                     imag2.as_span(), real1.as_span(), imag1.as_span());
 -
 -  // Multiply the packed DC/nyquist component
 -  real1[0] = real0 * real2[0];
@@ -72,8 +71,7 @@ index 29964379ea..ce12c87d56 100644
 +    imag1[0] = mac_arm_fft_multiply::MultiplyScalar(imag0, imag2[0]);
 +  } else {
 +    vector_math::Zvmul(real1.as_span(), imag1.as_span(), real2.as_span(),
-+                       imag2.as_span(), real1.as_span(), imag1.as_span(),
-+                       packed_size);
++                       imag2.as_span(), real1.as_span(), imag1.as_span());
 +
 +    // Multiply the packed DC/nyquist component
 +    real1[0] = real0 * real2[0];

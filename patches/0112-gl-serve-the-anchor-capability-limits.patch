@@ -172,7 +172,7 @@ index 6f9088924f..699e8e144c 100644
    std::set<std::string> webgpu_features_;
    std::string webgpu_vendor_;
 diff --git a/ui/gl/gl_gl_api_implementation.cc b/ui/gl/gl_gl_api_implementation.cc
-index 176fea5be2..a4c787e6f8 100644
+index 25a60cc03f..e9ea83ca3e 100644
 --- a/ui/gl/gl_gl_api_implementation.cc
 +++ b/ui/gl/gl_gl_api_implementation.cc
 @@ -10,6 +10,8 @@
@@ -184,7 +184,7 @@ index 176fea5be2..a4c787e6f8 100644
  #include <vector>
  
  #include "base/command_line.h"
-@@ -247,6 +249,10 @@ namespace {
+@@ -252,6 +254,10 @@ namespace {
  struct ApostateGlLimit {
    GLenum pname;
    const char* name;
@@ -195,7 +195,7 @@ index 176fea5be2..a4c787e6f8 100644
  };
  
  constexpr ApostateGlLimit kApostateGlLimits[] = {
-@@ -294,6 +300,72 @@ constexpr ApostateGlLimit kApostateGlLimits[] = {
+@@ -299,6 +305,72 @@ constexpr ApostateGlLimit kApostateGlLimits[] = {
      {GL_MAX_VARYING_COMPONENTS, "MAX_VARYING_COMPONENTS"},
      {GL_MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS,
       "MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS"},
@@ -268,7 +268,7 @@ index 176fea5be2..a4c787e6f8 100644
  };
  
  // True when the active backend enforces the limits it reports, so a claim
-@@ -322,159 +394,317 @@ constexpr ApostateGlLimit kApostateGlLimits[] = {
+@@ -327,166 +399,324 @@ constexpr ApostateGlLimit kApostateGlLimits[] = {
  // avoiding costs a detector a multi-hundred-megabyte allocation at the
  // reported maximum. The cheap check is the one to pass.
  //
@@ -321,10 +321,17 @@ index 176fea5be2..a4c787e6f8 100644
 +}
  
 -void RealGLApi::glGetIntegervFn(GLenum pname, GLint* params) {
--  if (pname == GL_NUM_EXTENSIONS && disabled_exts_.size()) {
--    InitializeFilteredExtensionsIfNeeded();
--    *params = static_cast<GLint>(filtered_exts_.size());
--    return;
+-  if (disabled_exts_.size()) {
+-    if (pname == GL_NUM_EXTENSIONS) {
+-      InitializeFilteredExtensionsIfNeeded();
+-      *params = static_cast<GLint>(filtered_exts_.size());
+-      return;
+-    }
+-    if (pname == GL_NUM_REQUESTABLE_EXTENSIONS_ANGLE) {
+-      InitializeFilteredRequestableExtensionsIfNeeded();
+-      *params = static_cast<GLint>(filtered_requestable_exts_.size());
+-      return;
+-    }
 +// Combine a claim with what the driver reports. On a backend that enforces
 +// what it reports, a ceiling takes the lower of the two and a floor the
 +// higher, so the served value is always one the driver can actually honour.
@@ -527,42 +534,14 @@ index 176fea5be2..a4c787e6f8 100644
    }
  }
  
+-void RealGLApi::glGetFloatvFn(GLenum pname, GLfloat* params) {
+-  GLApiBase::glGetFloatvFn(pname, params);
 +}  // namespace
-+
-+// The renderer the *driver* reports. RealGLApi::glGetStringFn substitutes the
-+// profile's claim, so this deliberately goes to the base: asking the claim
-+// whether the host enforces would answer about the wrong device. Cached
-+// because the GL implementation is fixed for process lifetime, which is the
-+// same assumption GetGLImplementationParts() already makes.
-+bool RealGLApi::ApostateEnforces() {
-+  static const bool enforces = BackendEnforcesGlLimits(
-+      reinterpret_cast<const char*>(GLApiBase::glGetStringFn(GL_RENDERER)));
-+  return enforces;
-+}
-+
-+void RealGLApi::glGetIntegervFn(GLenum pname, GLint* params) {
-+  if (pname == GL_NUM_EXTENSIONS && disabled_exts_.size()) {
-+    InitializeFilteredExtensionsIfNeeded();
-+    *params = static_cast<GLint>(filtered_exts_.size());
-+    return;
-+  }
-+
-+  GLApiBase::glGetIntegervFn(pname, params);
-+  if (const base::apostate::Profile* profile = ApostateProfileForLimits()) {
-+    ApostateServeNumeric(profile, ApostateEnforces(), kApostateGlIntegerRanges,
-+                         pname, params, /*available=*/-1);
-+  }
-+}
-+
- void RealGLApi::glGetFloatvFn(GLenum pname, GLfloat* params) {
-   GLApiBase::glGetFloatvFn(pname, params);
  
 -  // The third query path. MAX_TEXTURE_LOD_BIAS is a GLfloat, so neither the
 -  // 32-bit nor the 64-bit integer hook ever sees it, and it sat in the profile
 -  // being ignored: the reference reports 2 where SwiftShader reports 15.
-+  // MAX_TEXTURE_LOD_BIAS is a GLfloat, so neither integer hook ever sees it,
-+  // and the aliased line-width and point-size ranges arrive here too.
-   //
+-  //
 -  // Only integral limits are served here. gl_limits holds integers, every
 -  // limit in the table is one, and rounding a float claim would invent a
 -  // value the profile never carried.
@@ -576,14 +555,33 @@ index 176fea5be2..a4c787e6f8 100644
 -    }
 -    auto it = profile->gl_limits().find(limit.name);
 -    if (it == profile->gl_limits().end()) {
--      return;
--    }
++// The renderer the *driver* reports. RealGLApi::glGetStringFn substitutes the
++// profile's claim, so this deliberately goes to the base: asking the claim
++// whether the host enforces would answer about the wrong device. Cached
++// because the GL implementation is fixed for process lifetime, which is the
++// same assumption GetGLImplementationParts() already makes.
++bool RealGLApi::ApostateEnforces() {
++  static const bool enforces = BackendEnforcesGlLimits(
++      reinterpret_cast<const char*>(GLApiBase::glGetStringFn(GL_RENDERER)));
++  return enforces;
++}
++
++void RealGLApi::glGetIntegervFn(GLenum pname, GLint* params) {
++  if (disabled_exts_.size()) {
++    if (pname == GL_NUM_EXTENSIONS) {
++      InitializeFilteredExtensionsIfNeeded();
++      *params = static_cast<GLint>(filtered_exts_.size());
+       return;
+     }
 -    const GLfloat real = *params;
 -    const GLfloat claimed = static_cast<GLfloat>(it->second);
 -    if (!BackendEnforcesGlLimits()) {
 -      *params = claimed;
--      return;
--    }
++    if (pname == GL_NUM_REQUESTABLE_EXTENSIONS_ANGLE) {
++      InitializeFilteredRequestableExtensionsIfNeeded();
++      *params = static_cast<GLint>(filtered_requestable_exts_.size());
+       return;
+     }
 -    *params = std::min(claimed, real);
 -    if (claimed > real) {
 -      LOG(WARNING) << "apostate: profile claims " << limit.name << " = "
@@ -591,6 +589,21 @@ index 176fea5be2..a4c787e6f8 100644
 -                   << "; serving " << real << ".";
 -    }
 -    return;
++  }
++
++  GLApiBase::glGetIntegervFn(pname, params);
++  if (const base::apostate::Profile* profile = ApostateProfileForLimits()) {
++    ApostateServeNumeric(profile, ApostateEnforces(), kApostateGlIntegerRanges,
++                         pname, params, /*available=*/-1);
++  }
++}
++
++void RealGLApi::glGetFloatvFn(GLenum pname, GLfloat* params) {
++  GLApiBase::glGetFloatvFn(pname, params);
++
++  // MAX_TEXTURE_LOD_BIAS is a GLfloat, so neither integer hook ever sees it,
++  // and the aliased line-width and point-size ranges arrive here too.
++  //
 +  // Only integral limits are served. gl_limits holds integers, every limit in
 +  // the table is one, and rounding a float claim would invent a value the
 +  // profile never carried.
@@ -702,7 +715,7 @@ index 176fea5be2..a4c787e6f8 100644
  }
  
 diff --git a/ui/gl/gl_gl_api_implementation.h b/ui/gl/gl_gl_api_implementation.h
-index 5484ef786d..e80b612855 100644
+index 08a2de0db1..b305d7d67c 100644
 --- a/ui/gl/gl_gl_api_implementation.h
 +++ b/ui/gl/gl_gl_api_implementation.h
 @@ -57,6 +57,21 @@ class GL_EXPORT RealGLApi : public GLApiBase {
@@ -727,9 +740,9 @@ index 5484ef786d..e80b612855 100644
    void glGetShaderPrecisionFormatFn(GLenum shadertype,
                                      GLenum precisiontype,
                                      GLint* range,
-@@ -153,6 +168,11 @@ class GL_EXPORT RealGLApi : public GLApiBase {
-   // Compute |filtered_exts_| & |filtered_exts_str_| from |disabled_ext_|.
-   void InitializeFilteredExtensionsIfNeeded();
+@@ -158,6 +173,11 @@ class GL_EXPORT RealGLApi : public GLApiBase {
+   // from |disabled_exts_|.
+   void InitializeFilteredRequestableExtensionsIfNeeded();
  
 +  // True when the active backend enforces the limits it reports. Reads the
 +  // driver's own GL_RENDERER through GLApiBase, so it is not confused by the

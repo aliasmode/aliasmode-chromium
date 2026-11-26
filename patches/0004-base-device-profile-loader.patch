@@ -10,10 +10,10 @@ A claim above the host's real core count is clamped to the host, since a
 page can measure it.
 
 diff --git a/base/BUILD.gn b/base/BUILD.gn
-index 44ffb6ee33..ab7103a8f8 100644
+index 76fb572811..919f531cf6 100644
 --- a/base/BUILD.gn
 +++ b/base/BUILD.gn
-@@ -1684,6 +1684,8 @@ component("base") {
+@@ -1705,6 +1705,8 @@ component("base") {
      "process/process_metrics.h",
      "scoped_native_library.cc",
      "scoped_native_library.h",
@@ -234,7 +234,7 @@ index 0000000000..ff33d3da54
 +
 +#endif  // BASE_APOSTATE_PROFILE_H_
 diff --git a/base/base_switches.h b/base/base_switches.h
-index 389eecbd79..e68bcc944d 100644
+index ceda2075cb..7c0c331a2e 100644
 --- a/base/base_switches.h
 +++ b/base/base_switches.h
 @@ -11,6 +11,14 @@
@@ -404,7 +404,7 @@ index 5460a7f35e..a77c35334d 100644
  #endif  // !BUILDFLAG(IS_OPENBSD)
  
 diff --git a/base/system/sys_info_win.cc b/base/system/sys_info_win.cc
-index ddfe639f2b..e29306768b 100644
+index 4584fdef87..fe46d04dbd 100644
 --- a/base/system/sys_info_win.cc
 +++ b/base/system/sys_info_win.cc
 @@ -15,10 +15,12 @@
@@ -417,10 +417,10 @@ index ddfe639f2b..e29306768b 100644
  #include "base/compiler_specific.h"
  #include "base/files/file_path.h"
 +#include "base/logging.h"
- #include "base/not_fatal_until.h"
  #include "base/notreached.h"
  #include "base/numerics/safe_conversions.h"
-@@ -128,6 +130,41 @@ namespace base {
+ #include "base/process/process_metrics.h"
+@@ -127,6 +129,41 @@ namespace base {
  
  // static
  int SysInfo::NumberOfProcessors() {

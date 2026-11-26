@@ -10,7 +10,7 @@ Chrome applies stays, so the value varies between sessions as in stock
 Chrome.
 
 diff --git a/storage/browser/quota/quota_device_info_helper.cc b/storage/browser/quota/quota_device_info_helper.cc
-index c711feaef0..0b469f57bb 100644
+index 324c08a44a..7ebf699422 100644
 --- a/storage/browser/quota/quota_device_info_helper.cc
 +++ b/storage/browser/quota/quota_device_info_helper.cc
 @@ -4,6 +4,8 @@
@@ -20,9 +20,9 @@ index c711feaef0..0b469f57bb 100644
 +#include "base/apostate/profile.h"
 +
  #include "base/byte_size.h"
- #include "base/metrics/histogram_macros.h"
  
-@@ -19,6 +21,29 @@ int64_t QuotaDeviceInfoHelper::AmountOfTotalDiskSpace(
+ namespace storage {
+@@ -16,6 +18,29 @@ int64_t QuotaDeviceInfoHelper::AmountOfTotalDiskSpace(
  }
  
  uint64_t QuotaDeviceInfoHelper::AmountOfPhysicalMemory() const {

@@ -51,7 +51,7 @@ index dc2b9e9282..5f924bc0e8 100644
  };
  
 diff --git a/base/i18n/icu_util.cc b/base/i18n/icu_util.cc
-index 5fc1cadefa..e66140c994 100644
+index ebcbcaade9..a9a0c3bbc2 100644
 --- a/base/i18n/icu_util.cc
 +++ b/base/i18n/icu_util.cc
 @@ -4,6 +4,10 @@
@@ -62,10 +62,10 @@ index 5fc1cadefa..e66140c994 100644
 +#include "third_party/icu/source/common/unicode/unistr.h"
 +#include "third_party/icu/source/i18n/unicode/timezone.h"
 +
+ #include "base/i18n/icubridge/default_icu_locale.h"
+ #include "base/i18n/language_tag.h"
  #include "build/build_config.h"
- 
- #if BUILDFLAG(IS_WIN)
-@@ -406,7 +410,39 @@ bool InitializeICUWithFileDescriptor(
+@@ -402,7 +406,39 @@ bool InitializeICUWithFileDescriptor(
      return false;
    }
  
@@ -106,7 +106,7 @@ index 5fc1cadefa..e66140c994 100644
  }
  
  PlatformFile GetIcuDataFileHandle(MemoryMappedFile::Region* out_region) {
-@@ -454,7 +490,39 @@ bool InitializeICU() {
+@@ -450,7 +486,39 @@ bool InitializeICU() {
  #error Unsupported ICU_UTIL_DATA_IMPL value
  #endif  // (ICU_UTIL_DATA_IMPL == ICU_UTIL_DATA_STATIC)
  
@@ -146,4 +146,4 @@ index 5fc1cadefa..e66140c994 100644
 +  return true;
  }
  
- void AllowMultipleInitializeCallsForTesting() {
+ void PreReadIcuData() {

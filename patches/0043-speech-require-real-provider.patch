@@ -77,24 +77,24 @@ index 41a18d7069..0d2f2244a9 100644
    std::optional<std::string> timezone_;
    std::optional<bool> prefers_dark_;
 diff --git a/content/browser/speech/tts_controller_impl.cc b/content/browser/speech/tts_controller_impl.cc
-index 4ef2cd4da2..075608464e 100644
+index c82e2c880b..d2ede427d1 100644
 --- a/content/browser/speech/tts_controller_impl.cc
 +++ b/content/browser/speech/tts_controller_impl.cc
-@@ -10,11 +10,13 @@
- #include <string>
+@@ -12,11 +12,13 @@
+ #include <string_view>
  #include <vector>
  
 +#include "base/apostate/profile.h"
  #include "base/containers/queue.h"
  #include "base/functional/bind.h"
- #include "base/i18n/legacy_language_tag_helpers.h"
+ #include "base/i18n/language_tag.h"
  #include "base/i18n/tag_converters.h"
  #include "base/json/json_reader.h"
 +#include "base/logging.h"
  #include "base/metrics/histogram_macros.h"
  #include "base/metrics/user_metrics.h"
  #include "base/observer_list.h"
-@@ -482,6 +484,23 @@ void TtsControllerImpl::GetVoices(BrowserContext* browser_context,
+@@ -465,6 +467,23 @@ void TtsControllerImpl::GetVoices(BrowserContext* browser_context,
                         [](const VoiceData& voice) { return voice.remote; });
      out_voices->resize(it - out_voices->begin());
    }
@@ -118,7 +118,7 @@ index 4ef2cd4da2..075608464e 100644
  }
  
  bool TtsControllerImpl::IsSpeaking() {
-@@ -652,6 +671,18 @@ void TtsControllerImpl::SpeakNow(std::unique_ptr<TtsUtterance> utterance) {
+@@ -635,6 +654,18 @@ void TtsControllerImpl::SpeakNow(std::unique_ptr<TtsUtterance> utterance) {
    // TODO(katie): Move most of the GetMatchingVoice logic into content/ and
    // use the TTS controller delegate to get chrome-specific info as needed.
    int index = GetMatchingVoice(utterance.get(), voices);
@@ -138,7 +138,7 @@ index 4ef2cd4da2..075608464e 100644
    if (index >= 0) {
      voice = voices[index];
 diff --git a/content/browser/speech/tts_controller_unittest.cc b/content/browser/speech/tts_controller_unittest.cc
-index 403b25c951..954f117aef 100644
+index 337e7a6a65..5a743fc75c 100644
 --- a/content/browser/speech/tts_controller_unittest.cc
 +++ b/content/browser/speech/tts_controller_unittest.cc
 @@ -4,6 +4,9 @@
@@ -148,10 +148,10 @@ index 403b25c951..954f117aef 100644
 +#include "base/apostate/profile.h"
 +#include "base/base64.h"
 +#include "base/check.h"
- #include "base/memory/ptr_util.h"
- #include "base/memory/raw_ptr.h"
- #include "base/values.h"
-@@ -24,7 +27,44 @@
+ #include <optional>
+ 
+ #include "base/i18n/language_tag.h"
+@@ -27,7 +30,44 @@
  #include "content/public/browser/tts_controller_delegate_chromeos.h"
  #endif
  
@@ -196,7 +196,7 @@ index 403b25c951..954f117aef 100644
  
  // Platform Tts implementation that does nothing.
  class MockTtsPlatformImpl : public TtsPlatform {
-@@ -48,6 +88,7 @@ class MockTtsPlatformImpl : public TtsPlatform {
+@@ -51,6 +91,7 @@ class MockTtsPlatformImpl : public TtsPlatform {
        const VoiceData& voice,
        const UtteranceContinuousParameters& params,
        base::OnceCallback<void(bool)> did_start_speaking_callback) override {
@@ -204,7 +204,7 @@ index 403b25c951..954f117aef 100644
      utterance_id_ = utterance_id;
      did_start_speaking_callback_ = std::move(did_start_speaking_callback);
      utterance_voice_ = voice;
-@@ -79,6 +120,8 @@ class MockTtsPlatformImpl : public TtsPlatform {
+@@ -82,6 +123,8 @@ class MockTtsPlatformImpl : public TtsPlatform {
    // Returns the VoiceData passed in by mock Speak API.
    VoiceData get_utterance_voice() const { return utterance_voice_; }
  
@@ -213,7 +213,7 @@ index 403b25c951..954f117aef 100644
    // Returns the amount of calls to Mock API.
    int pause_called() const { return pause_called_; }
    int resume_called() const { return resume_called_; }
-@@ -111,6 +154,7 @@ class MockTtsPlatformImpl : public TtsPlatform {
+@@ -114,6 +157,7 @@ class MockTtsPlatformImpl : public TtsPlatform {
    int pause_called_ = 0;
    int resume_called_ = 0;
    int stop_speaking_called_ = 0;
@@ -221,7 +221,7 @@ index 403b25c951..954f117aef 100644
    std::string error_;
    base::OnceCallback<void(bool)> did_start_speaking_callback_;
  };
-@@ -1446,4 +1490,139 @@ TEST_F(TtsControllerTest, SpeakWhenLoadingBuiltInEngine) {
+@@ -1463,4 +1507,139 @@ TEST_F(TtsControllerTest, SpeakWhenLoadingBuiltInEngine) {
  }
  #endif  // !BUILDFLAG(IS_ANDROID)
  

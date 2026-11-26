@@ -23,7 +23,7 @@ index 319d60145f..28abd28d06 100644
      return keyboard_layout_map_;
    }
 diff --git a/content/browser/renderer_host/page_impl.cc b/content/browser/renderer_host/page_impl.cc
-index a6028edee5..af7380692c 100644
+index 49c25e21a0..fa56467fba 100644
 --- a/content/browser/renderer_host/page_impl.cc
 +++ b/content/browser/renderer_host/page_impl.cc
 @@ -4,6 +4,10 @@
@@ -37,9 +37,9 @@ index a6028edee5..af7380692c 100644
  #include "base/apostate/profile.h"
  
  #include "base/barrier_closure.h"
-@@ -36,6 +40,52 @@
+@@ -59,6 +63,52 @@ PageImpl::UserEditScope GetEditScope(
  
- namespace content {
+ }  // namespace
  
 +namespace {
 +
@@ -90,7 +90,7 @@ index a6028edee5..af7380692c 100644
  PageImpl::PageImpl(RenderFrameHostImpl& rfh, PageDelegate& delegate)
      : main_document_(rfh), delegate_(delegate) {
  
-@@ -386,6 +436,17 @@ base::flat_map<std::string, std::string> PageImpl::GetKeyboardLayoutMap() {
+@@ -405,6 +455,17 @@ base::flat_map<std::string, std::string> PageImpl::GetKeyboardLayoutMap() {
      if (!map.empty()) {
        return base::flat_map<std::string, std::string>(map.begin(), map.end());
      }

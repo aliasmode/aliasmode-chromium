@@ -103,12 +103,12 @@ index 77afa1c207..03ece27272 100644
      angle::UpdateHashWithValue(hasher, caps.maxShaderUniformComponents[ShaderType::Vertex]);
  
 diff --git a/third_party/angle/src/libANGLE/Shader.cpp b/third_party/angle/src/libANGLE/Shader.cpp
-index 24d37a30de..2eeeedd33c 100644
+index ee32b33309..dafb796e2a 100644
 --- a/third_party/angle/src/libANGLE/Shader.cpp
 +++ b/third_party/angle/src/libANGLE/Shader.cpp
-@@ -667,6 +667,14 @@ void Shader::compile(const Context *context, angle::JobResultExpectancy resultEx
-     options.validateAST = true;
- #endif
+@@ -681,6 +681,14 @@ void Shader::compile(const Context *context, angle::JobResultExpectancy resultEx
+         options.outputDebugInfo = true;
+     }
  
 +    // Set this before cache lookup. Shader::setShaderKey hashes the compile
 +    // options and complete built-in resources, including Min/MaxPointSize.

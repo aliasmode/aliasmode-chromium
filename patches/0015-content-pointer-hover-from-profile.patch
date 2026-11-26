@@ -63,7 +63,7 @@ index e14ab5210c..0fad4c3c4b 100644
    std::optional<uint32_t> css_highlight_text_argb_;
    std::string source_id_;
 diff --git a/content/browser/web_contents/slow_web_preference_cache.cc b/content/browser/web_contents/slow_web_preference_cache.cc
-index e8fc8addb3..9f2b8e981c 100644
+index 1ff74b9c50..03e0b37f67 100644
 --- a/content/browser/web_contents/slow_web_preference_cache.cc
 +++ b/content/browser/web_contents/slow_web_preference_cache.cc
 @@ -4,6 +4,8 @@
@@ -75,9 +75,9 @@ index e8fc8addb3..9f2b8e981c 100644
  #include "base/command_line.h"
  #include "base/metrics/histogram_functions.h"
  #include "base/no_destructor.h"
-@@ -173,6 +175,36 @@ bool SlowWebPreferenceCache::Update() {
-   primary_hover_type_ =
-       static_cast<blink::mojom::HoverType>(ui::GetPrimaryHoverType());
+@@ -174,6 +176,36 @@ bool SlowWebPreferenceCache::Update() {
+       static_cast<blink::mojom::HoverType>(ui::GetPrimaryHoverType(
+           available_pointer_types_, available_hover_types_));
  
 +  // Apostate: headless has no input device, so these come back as "none" and
 +  // the page sees (any-pointer: none) and (any-hover: none). No desktop machine

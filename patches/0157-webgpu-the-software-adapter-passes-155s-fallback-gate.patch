@@ -13,10 +13,10 @@ path. That instance loads only SwiftShader from the one trusted directory
 forceFallbackAdapter on it, so pages still cannot ask for SwiftShader.
 
 diff --git a/gpu/command_buffer/service/webgpu_decoder_impl.cc b/gpu/command_buffer/service/webgpu_decoder_impl.cc
-index 45c1e18e18..5f248ba1b2 100644
+index 3aad7aa67a..7d2b44eb2e 100644
 --- a/gpu/command_buffer/service/webgpu_decoder_impl.cc
 +++ b/gpu/command_buffer/service/webgpu_decoder_impl.cc
-@@ -2082,9 +2082,12 @@ wgpu::Adapter WebGPUDecoderImpl::CreatePreferredAdapter(
+@@ -2147,9 +2147,13 @@ wgpu::Adapter WebGPUDecoderImpl::CreatePreferredAdapter(
      wgpu::FeatureLevel feature_level,
      bool webgpu_on_vk_gl_interop) const {
    // The fallback adapter is SwiftShader, which is only allowed with
@@ -26,8 +26,9 @@ index 45c1e18e18..5f248ba1b2 100644
 +  // directory, admitted by CanUseProfileSoftwareWebGPU, and a page asking for
 +  // the fallback adapter is refused before this point.
    const bool allow_fallback_adapter =
--      safety_level_ == webgpu::SafetyLevel::kUnsafe;
-+      safety_level_ == webgpu::SafetyLevel::kUnsafe || profile_software_webgpu_;
+-      safety_level() == webgpu::SafetyLevel::kUnsafe;
++      safety_level() == webgpu::SafetyLevel::kUnsafe ||
++      profile_software_webgpu_;
    if (force_fallback && !allow_fallback_adapter) {
      return nullptr;
    }

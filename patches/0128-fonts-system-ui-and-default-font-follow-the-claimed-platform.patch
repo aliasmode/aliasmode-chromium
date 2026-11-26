@@ -33,18 +33,18 @@ index f727755b84..25a21a2e23 100644
  
    web_prefs->default_font_size =
 diff --git a/third_party/blink/renderer/platform/fonts/font_cache.cc b/third_party/blink/renderer/platform/fonts/font_cache.cc
-index 2f2ba62b54..b97e65d4c6 100644
+index e57c1725e8..b13043f083 100644
 --- a/third_party/blink/renderer/platform/fonts/font_cache.cc
 +++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
-@@ -71,6 +71,7 @@
- #include "third_party/blink/renderer/platform/instrumentation/tracing/web_process_memory_dump.h"
+@@ -72,6 +72,7 @@
  #include "third_party/blink/renderer/platform/json/json_parser.h"
  #include "third_party/blink/renderer/platform/json/json_values.h"
+ #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 +#include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
  #include "third_party/blink/renderer/platform/wtf/text/atomic_string_hash.h"
  #include "third_party/blink/renderer/platform/wtf/text/code_point_iterator.h"
  #include "third_party/blink/renderer/platform/wtf/text/string_hash.h"
-@@ -118,6 +119,31 @@ bool StripOneSuffix(std::string_view& name,
+@@ -119,6 +120,31 @@ bool StripOneSuffix(std::string_view& name,
    return false;
  }
  
@@ -76,12 +76,12 @@ index 2f2ba62b54..b97e65d4c6 100644
  }  // namespace
  
  // static
-@@ -246,12 +272,17 @@ const FontPlatformData* FontCache::GetFontPlatformData(
+@@ -247,12 +273,17 @@ const FontPlatformData* FontCache::GetFontPlatformData(
      AlternateFontName alternate_font_name) {
    TRACE_EVENT0("fonts", "FontCache::GetFontPlatformData");
  
 -#if !BUILDFLAG(IS_MAC)
-   if (creation_params.CreationType() == kCreateFontByFamily &&
+   if (creation_params.CreationType() == FontFaceCreationType::kFamily &&
        creation_params.Family() == font_family_names::kSystemUi) {
 +    if (const AtomicString& family = PersonaSystemUiFamily(); !family.empty()) {
 +      return GetFontPlatformData(font_description,

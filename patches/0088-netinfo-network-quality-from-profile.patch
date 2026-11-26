@@ -299,11 +299,11 @@ index f1e2d12922..ee85681f17 100644
    // The random number should be a function of the hostname to reduce
    // cross-origin fingerprinting. The random number should also be a function
 diff --git a/third_party/blink/renderer/platform/network/network_state_notifier.h b/third_party/blink/renderer/platform/network/network_state_notifier.h
-index 9e3d26edb5..db99a5e9e1 100644
+index 931199134e..32434a3d13 100644
 --- a/third_party/blink/renderer/platform/network/network_state_notifier.h
 +++ b/third_party/blink/renderer/platform/network/network_state_notifier.h
-@@ -121,7 +121,9 @@ class PLATFORM_EXPORT NetworkStateNotifier {
-     scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+@@ -124,7 +124,9 @@ class PLATFORM_EXPORT NetworkStateNotifier {
+     const ObserverListUniqueId id_;
    };
  
 -  NetworkStateNotifier() : has_override_(false) {}
@@ -313,7 +313,7 @@ index 9e3d26edb5..db99a5e9e1 100644
    NetworkStateNotifier(const NetworkStateNotifier&) = delete;
    NetworkStateNotifier& operator=(const NetworkStateNotifier&) = delete;
  
-@@ -352,6 +354,18 @@ class PLATFORM_EXPORT NetworkStateNotifier {
+@@ -368,6 +370,18 @@ class PLATFORM_EXPORT NetworkStateNotifier {
    // Adding this noise reduces the chances of cross-origin fingerprinting.
    double GetRandomMultiplier(const String& host) const;
  

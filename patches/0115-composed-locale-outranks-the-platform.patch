@@ -371,7 +371,7 @@ index afdd0f0f1a..bd80331476 100644
  }  // namespace
  }  // namespace base::apostate
 diff --git a/ui/base/l10n/l10n_util.cc b/ui/base/l10n/l10n_util.cc
-index 5ce078e14b..36b6bcc579 100644
+index f5a68518b1..87ddac3b7c 100644
 --- a/ui/base/l10n/l10n_util.cc
 +++ b/ui/base/l10n/l10n_util.cc
 @@ -12,6 +12,7 @@
@@ -382,9 +382,9 @@ index 5ce078e14b..36b6bcc579 100644
  #include "base/check_op.h"
  #include "base/command_line.h"
  #include "base/compiler_specific.h"
-@@ -273,7 +274,70 @@ std::string GetApplicationLocaleInternalNonMac(std::string_view pref_locale) {
+@@ -207,7 +208,70 @@ std::optional<std::string> CheckAndResolveLocale(std::string_view locale,
+       });
  }
- #endif  // !BUILDFLAG(IS_APPLE)
  
 +// Apostate: the composed application locale, ahead of every platform
 +// candidate.
@@ -450,11 +450,11 @@ index 5ce078e14b..36b6bcc579 100644
 +  if (std::string composed = ApostateApplicationLocale(); !composed.empty()) {
 +    return composed;
 +  }
- #if BUILDFLAG(IS_APPLE)
-   return GetApplicationLocaleInternalMac(pref_locale);
- #else
+   // The `preferred_tag` is separated from the other candidates.
+   std::optional<LanguageTag> preferred_tag = GetPreferredTag(pref_locale);
+   // If `preferred_tag`, it attempts to get a match for it, even if it is not
 diff --git a/ui/base/l10n/l10n_util_unittest.cc b/ui/base/l10n/l10n_util_unittest.cc
-index 6ac7351f9f..3d19fd83a0 100644
+index d0272a1528..37cf8d2451 100644
 --- a/ui/base/l10n/l10n_util_unittest.cc
 +++ b/ui/base/l10n/l10n_util_unittest.cc
 @@ -13,6 +13,10 @@
@@ -469,14 +469,14 @@ index 6ac7351f9f..3d19fd83a0 100644
  #include "base/containers/span.h"
  #include "base/environment.h"
 @@ -31,6 +35,7 @@
+ #include "base/strings/strcat.h"
  #include "base/strings/string_util.h"
  #include "base/strings/utf_string_conversions.h"
- #include "base/test/icu_test_util.h"
 +#include "base/test/scoped_command_line.h"
  #include "base/test/scoped_path_override.h"
  #include "build/build_config.h"
  #include "testing/gmock/include/gmock/gmock.h"
-@@ -504,6 +509,110 @@ TEST_F(L10nUtilTest, GetAppLocaleWin) {
+@@ -551,6 +556,110 @@ TEST_F(L10nUtilTest, GetAppLocaleWin) {
  using L10nUtilTest = PlatformTest;
  #endif  // !BUILDFLAG(IS_APPLE)
  

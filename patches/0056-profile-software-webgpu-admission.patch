@@ -34,6 +34,41 @@ index 58537a332e..533450a414 100644
        "webgpu_decoder_impl.cc",
        "webgpu_decoder_impl.h",
      ]
+diff --git a/gpu/command_buffer/service/dawn_instance.cc b/gpu/command_buffer/service/dawn_instance.cc
+index 6595d926c2..dfaf708498 100644
+--- a/gpu/command_buffer/service/dawn_instance.cc
++++ b/gpu/command_buffer/service/dawn_instance.cc
+@@ -56,13 +56,14 @@ DawnInstance::~DawnInstance() {
+ 
+ // static
+ scoped_refptr<DawnInstance> DawnInstance::CreateForWebGPU(
+-    const GpuPreferences& gpu_preferences) {
++    const GpuPreferences& gpu_preferences,
++    dawn::native::DawnInstanceDescriptor* dawn_instance_descriptor) {
+   return Create(std::make_unique<DawnPlatform>(
+                     /*progress_reporter=*/nullptr,
+                     /*uma_prefix=*/"GPU.WebGPU.",
+                     /*record_cache_count_uma=*/false),
+                 gpu_preferences, GetWebGPUSafetyLevel(gpu_preferences),
+-                /*dawn_instance_descriptor=*/nullptr);
++                dawn_instance_descriptor);
+ }
+ 
+ // static
+diff --git a/gpu/command_buffer/service/dawn_instance.h b/gpu/command_buffer/service/dawn_instance.h
+index 637effab2c..6fa62ef679 100644
+--- a/gpu/command_buffer/service/dawn_instance.h
++++ b/gpu/command_buffer/service/dawn_instance.h
+@@ -42,7 +42,8 @@ class DawnInstance : public dawn::native::Instance,
+   // Creates a DawnInstance configured for servicing WebGPU contexts. The
+   // safety level is derived from `gpu_preferences`.
+   static scoped_refptr<DawnInstance> CreateForWebGPU(
+-      const GpuPreferences& gpu_preferences);
++      const GpuPreferences& gpu_preferences,
++      dawn::native::DawnInstanceDescriptor* dawn_instance_descriptor = nullptr);
+ 
+   // Creates a DawnInstance configured for Graphite. Since access to this
+   // instance doesn't leave the GPU process, unsafe APIs are always allowed.
 diff --git a/gpu/command_buffer/service/profile_software_webgpu_policy.h b/gpu/command_buffer/service/profile_software_webgpu_policy.h
 new file mode 100644
 index 0000000000..9c31d8adf9
@@ -84,10 +119,10 @@ index 0000000000..9c31d8adf9
 +}  // namespace gpu::webgpu
 +#endif  // GPU_COMMAND_BUFFER_SERVICE_PROFILE_SOFTWARE_WEBGPU_POLICY_H_
 diff --git a/gpu/command_buffer/service/webgpu_decoder_impl.cc b/gpu/command_buffer/service/webgpu_decoder_impl.cc
-index 6c0e5660d0..255dab2d59 100644
+index 6d94a4f2e4..ca08bd3711 100644
 --- a/gpu/command_buffer/service/webgpu_decoder_impl.cc
 +++ b/gpu/command_buffer/service/webgpu_decoder_impl.cc
-@@ -10,6 +10,7 @@
+@@ -11,6 +11,7 @@
  #include <string_view>
  #include <vector>
  
@@ -95,23 +130,23 @@ index 6c0e5660d0..255dab2d59 100644
  #include "base/auto_reset.h"
  #include "base/bits.h"
  #include "base/compiler_specific.h"
-@@ -41,6 +42,7 @@
- #include "gpu/command_buffer/service/decoder_client.h"
+@@ -43,6 +44,7 @@
+ #include "gpu/command_buffer/service/gl_utils.h"
  #include "gpu/command_buffer/service/graphite_utils.h"
  #include "gpu/command_buffer/service/isolation_key_provider.h"
 +#include "gpu/command_buffer/service/profile_software_webgpu_policy.h"
  #include "gpu/command_buffer/service/shared_context_state.h"
  #include "gpu/command_buffer/service/shared_image/shared_image_factory.h"
  #include "gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h"
-@@ -66,6 +68,7 @@
- #include "third_party/skia/include/gpu/ganesh/SkSurfaceGanesh.h"
+@@ -69,6 +71,7 @@
  #include "third_party/skia/include/gpu/graphite/Context.h"
  #include "ui/gl/gl_context_egl.h"
+ #include "ui/gl/gl_implementation.h"
 +#include "ui/gl/gl_implementation.h"
  #include "ui/gl/gl_surface_egl.h"
  
  #if BUILDFLAG(IS_WIN)
-@@ -417,6 +420,7 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
+@@ -448,6 +451,7 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
        WebGPUPowerPreference::kNone;
    bool force_fallback_adapter_ = false;
    bool webgpu_on_vk_gl_interop_ = false;
@@ -119,17 +154,7 @@ index 6c0e5660d0..255dab2d59 100644
    bool force_webgpu_compat_ = false;
    std::vector<std::string> require_enabled_toggles_;
    std::vector<std::string> require_disabled_toggles_;
-@@ -1107,9 +1111,6 @@ WebGPUDecoderImpl::WebGPUDecoderImpl(
-   if (gpu_preferences.enable_unsafe_webgpu) {
-     safety_level_ = webgpu::SafetyLevel::kUnsafe;
-   }
--  dawn_instance_ = DawnInstance::Create(dawn_platform_.get(), gpu_preferences,
--                                        safety_level_);
--
-   use_webgpu_adapter_ = gpu_preferences.use_webgpu_adapter;
-   use_webgpu_power_preference_ = gpu_preferences.use_webgpu_power_preference;
-   // TODO(crbug.com/500918256): Move VulkanContextProvider creation earlier
-@@ -1141,6 +1142,30 @@ WebGPUDecoderImpl::WebGPUDecoderImpl(
+@@ -1179,6 +1183,32 @@ WebGPUDecoderImpl::WebGPUDecoderImpl(
    tiered_adapter_limits_ = !std::ranges::contains(require_disabled_toggles_,
                                                    "tiered_adapter_limits");
  
@@ -140,7 +165,7 @@ index 6c0e5660d0..255dab2d59 100644
 +        .platform = *profile->ua_platform(),
 +        .angle_is_swiftshader = gl::GetANGLEImplementation() == gl::ANGLEImplementation::kSwiftShader,
 +        .shared_context_is_gl = shared_context_state_ && shared_context_state_->GrContextIsGL(),
-+        .safe = safety_level_ == SafetyLevel::kSafe,
++        .safe = safety_level() == SafetyLevel::kSafe,
 +        .has_dawn_overrides = !require_enabled_toggles_.empty() ||
 +                              !require_disabled_toggles_.empty() || !runtime_unsafe_features_.empty(),
 +        .force_compat = force_webgpu_compat_,
@@ -153,14 +178,16 @@ index 6c0e5660d0..255dab2d59 100644
 +    // Real CPU devices use the existing checked shared-image staging path.
 +    // This changes selection/admission only, never identity or limits.
 +    use_webgpu_adapter_ = WebGPUAdapterName::kSwiftShader;
++    // The shared WebGPU instance admits no CPU adapter. This decoder gets its
++    // own, limited to the bundled SwiftShader, with the same safety level.
++    dawn_instance_ =
++        DawnInstance::CreateForWebGPU(gpu_preferences, &provider_descriptor);
 +  }
-+  dawn_instance_ = DawnInstance::Create(dawn_platform_.get(), gpu_preferences,
-+                                      safety_level_, &provider_descriptor);
 +
    DawnProcTable wire_procs = dawn::native::GetProcs();
    wire_procs.createInstance =
        [](const WGPUInstanceDescriptor*) -> WGPUInstance { NOTREACHED(); };
-@@ -1774,7 +1799,9 @@ wgpu::Adapter WebGPUDecoderImpl::CreatePreferredAdapter(
+@@ -1820,7 +1850,9 @@ wgpu::Adapter WebGPUDecoderImpl::CreatePreferredAdapter(
      wgpu::AdapterInfo adapter_info = {};
      adapter.GetInfo(&adapter_info);
  

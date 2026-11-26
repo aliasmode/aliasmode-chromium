@@ -9,7 +9,7 @@ claimed limits fails with the real device's message, and asking for a
 fallback adapter returns none.
 
 diff --git a/gpu/command_buffer/service/webgpu_decoder_impl.cc b/gpu/command_buffer/service/webgpu_decoder_impl.cc
-index 09fbf4eb58..4f731728e7 100644
+index 858568c544..9435f36a31 100644
 --- a/gpu/command_buffer/service/webgpu_decoder_impl.cc
 +++ b/gpu/command_buffer/service/webgpu_decoder_impl.cc
 @@ -5,6 +5,8 @@
@@ -18,10 +18,10 @@ index 09fbf4eb58..4f731728e7 100644
  #include <algorithm>
 +#include <functional>
 +#include <limits>
+ #include <array>
  #include <map>
  #include <memory>
- #include <optional>
-@@ -25,6 +27,8 @@
+@@ -26,6 +28,8 @@
  #include "base/notreached.h"
  #include "base/numerics/checked_math.h"
  #include "base/power_monitor/power_monitor.h"
@@ -30,7 +30,7 @@ index 09fbf4eb58..4f731728e7 100644
  #include "base/strings/string_split.h"
  #include "base/task/bind_post_task.h"
  #include "base/task/single_thread_task_runner.h"
-@@ -119,6 +123,189 @@ WGPUStringView MakeStringView() {
+@@ -143,6 +147,189 @@ WGPUStringView MakeStringView() {
    return {nullptr, 0};
  }
  
@@ -220,7 +220,7 @@ index 09fbf4eb58..4f731728e7 100644
  // This variable is set to DawnWireServer's parent decoder during execution of
  // HandleCommands. It is cleared to nullptr after. This enables some of the
  // overridden procs to be overridden with a WebGPUDecoderImpl member function.
-@@ -359,6 +546,11 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
+@@ -385,6 +572,11 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
    WGPUBool AdapterHasFeatureImpl(WGPUAdapter adapter, WGPUFeatureName feature);
    void AdapterGetFeaturesImpl(WGPUAdapter adapter,
                                WGPUSupportedFeatures* features_out);
@@ -232,9 +232,9 @@ index 09fbf4eb58..4f731728e7 100644
    template <typename CallbackInfo>
    WGPUFuture RequestDeviceImpl(WGPUAdapter adapter,
                                 const WGPUDeviceDescriptor* descriptor,
-@@ -405,6 +597,10 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
- 
-   bool use_blocklist() const;
+@@ -437,6 +629,10 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
+     return dawn_instance_->safety_level();
+   }
  
 +  // The claimed device's feature names when the software adapter stands in
 +  // for it and the profile lists any, else null.
@@ -243,7 +243,7 @@ index 09fbf4eb58..4f731728e7 100644
    bool ClearSharedImageWithSkia(const Mailbox& mailbox);
  
    scoped_refptr<SharedContextState> shared_context_state_;
-@@ -423,6 +619,20 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
+@@ -454,6 +650,20 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
    bool force_fallback_adapter_ = false;
    bool webgpu_on_vk_gl_interop_ = false;
    bool profile_software_webgpu_ = false;
@@ -264,7 +264,7 @@ index 09fbf4eb58..4f731728e7 100644
    bool force_webgpu_compat_ = false;
    std::vector<std::string> require_enabled_toggles_;
    std::vector<std::string> require_disabled_toggles_;
-@@ -1186,6 +1396,26 @@ WebGPUDecoderImpl::WebGPUDecoderImpl(
+@@ -1229,6 +1439,26 @@ WebGPUDecoderImpl::WebGPUDecoderImpl(
      return parent_decoder->AdapterGetFeaturesImpl(
          std::forward<decltype(args)>(args)...);
    };
@@ -291,7 +291,7 @@ index 09fbf4eb58..4f731728e7 100644
    wire_procs.supportedFeaturesFreeMembers =
        [](WGPUSupportedFeatures supported_features) -> void {
      // We don't need any state so we don't need the parent decoder and can free
-@@ -1350,6 +1580,15 @@ WGPUFuture WebGPUDecoderImpl::RequestAdapterImpl(
+@@ -1391,6 +1621,15 @@ WGPUFuture WebGPUDecoderImpl::RequestAdapterImpl(
      options = &default_options;
    }
  
@@ -307,7 +307,7 @@ index 09fbf4eb58..4f731728e7 100644
    bool force_fallback_adapter = force_fallback_adapter_;
    if (use_webgpu_adapter_ == WebGPUAdapterName::kSwiftShader) {
      force_fallback_adapter = true;
-@@ -1417,6 +1656,9 @@ WGPUBool WebGPUDecoderImpl::AdapterHasFeatureImpl(WGPUAdapter adapter,
+@@ -1458,6 +1697,9 @@ WGPUBool WebGPUDecoderImpl::AdapterHasFeatureImpl(WGPUAdapter adapter,
    if (!IsFeatureExposed(static_cast<wgpu::FeatureName>(feature))) {
      return false;
    }
@@ -317,7 +317,7 @@ index 09fbf4eb58..4f731728e7 100644
    wgpu::Adapter adapter_obj(adapter);
    return adapter_obj.HasFeature(static_cast<wgpu::FeatureName>(feature));
  }
-@@ -1424,16 +1666,23 @@ WGPUBool WebGPUDecoderImpl::AdapterHasFeatureImpl(WGPUAdapter adapter,
+@@ -1465,16 +1707,23 @@ WGPUBool WebGPUDecoderImpl::AdapterHasFeatureImpl(WGPUAdapter adapter,
  void WebGPUDecoderImpl::AdapterGetFeaturesImpl(
      WGPUAdapter adapter,
      WGPUSupportedFeatures* features_out) {
@@ -350,7 +350,7 @@ index 09fbf4eb58..4f731728e7 100644
    }
    const size_t count = exposed_features.size();
    WGPUFeatureName* features = new WGPUFeatureName[count];
-@@ -1445,6 +1694,90 @@ void WebGPUDecoderImpl::AdapterGetFeaturesImpl(
+@@ -1486,6 +1735,90 @@ void WebGPUDecoderImpl::AdapterGetFeaturesImpl(
    features_out->features = features;
  }
  
@@ -441,7 +441,7 @@ index 09fbf4eb58..4f731728e7 100644
  template <typename CallbackInfo>
  WGPUFuture WebGPUDecoderImpl::RequestDeviceImpl(
      WGPUAdapter adapter,
-@@ -1495,6 +1828,57 @@ WGPUFuture WebGPUDecoderImpl::RequestDeviceImpl(
+@@ -1536,6 +1869,57 @@ WGPUFuture WebGPUDecoderImpl::RequestDeviceImpl(
      }
    }
  
@@ -499,7 +499,7 @@ index 09fbf4eb58..4f731728e7 100644
    // We need to request internal usage to be able to do operations with internal
    // SharedImage / interop methods that would need specific usages.
    required_features.push_back(wgpu::FeatureName::DawnInternalUsages);
-@@ -1634,6 +2018,7 @@ WGPUFuture WebGPUDecoderImpl::RequestDeviceImpl(
+@@ -1699,6 +2083,7 @@ WGPUFuture WebGPUDecoderImpl::RequestDeviceImpl(
    // The callback must have been called synchronously. We could allow async
    // here, but it would require careful handling of the decoder lifetime.
    CHECK(called);
@@ -507,8 +507,8 @@ index 09fbf4eb58..4f731728e7 100644
    return f;
  }
  
-@@ -1644,6 +2029,16 @@ bool WebGPUDecoderImpl::use_blocklist() const {
-       safety_level_ == webgpu::SafetyLevel::kUnsafe ||
+@@ -1709,6 +2094,16 @@ bool WebGPUDecoderImpl::use_blocklist() const {
+       safety_level() == webgpu::SafetyLevel::kUnsafe ||
        std::ranges::contains(require_disabled_toggles_, "adapter_blocklist"));
  }
 +

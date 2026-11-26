@@ -22,10 +22,10 @@ The candidate text rewrite of patch 0073 now keeps an mDNS name and an
 empty related address, as stock Chrome shows them.
 
 diff --git a/third_party/webrtc/api/candidate.cc b/third_party/webrtc/api/candidate.cc
-index 2398b96f8a..9b0aad86fb 100644
+index 24932ffa42..e06c5a0b60 100644
 --- a/third_party/webrtc/api/candidate.cc
 +++ b/third_party/webrtc/api/candidate.cc
-@@ -90,7 +90,10 @@ std::string BuildCandidate(const Candidate& candidate, bool include_ufrag) {
+@@ -93,7 +93,10 @@ std::string BuildCandidate(const Candidate& candidate, bool include_ufrag) {
            : candidate.address().ipaddr().ToString();
    bool address_overridden = false;
  #if defined(WEBRTC_CHROMIUM_BUILD)
@@ -37,7 +37,7 @@ index 2398b96f8a..9b0aad86fb 100644
      const base::CommandLine* command_line =
          base::CommandLine::ForCurrentProcess();
      if (command_line->HasSwitch("fingerprint-webrtc-ip")) {
-@@ -113,8 +116,9 @@ std::string BuildCandidate(const Candidate& candidate, bool include_ufrag) {
+@@ -116,8 +119,9 @@ std::string BuildCandidate(const Candidate& candidate, bool include_ufrag) {
    // Related address
    if (!candidate.related_address().IsNil()) {
      os << kAttributeCandidateRaddr << " "
@@ -47,8 +47,8 @@ index 2398b96f8a..9b0aad86fb 100644
 +               ? address
 +               : candidate.related_address().ipaddr().ToString())
         << " "
-        << kAttributeCandidateRport << " "
-        << candidate.related_address().PortAsString() << " ";
+        << kAttributeCandidateRport << " " << candidate.related_address().port()
+        << " ";
 diff --git a/third_party/webrtc/p2p/BUILD.gn b/third_party/webrtc/p2p/BUILD.gn
 index eafa80180a..97b19ea1d5 100644
 --- a/third_party/webrtc/p2p/BUILD.gn
