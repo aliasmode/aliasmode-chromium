@@ -1910,9 +1910,29 @@ def _resolve_internal(config: Mapping[str, Any] | None = None, **overrides: Any)
             composed_browser["user_agent"], browser_build)
 
     _derive_work_area(profile)
+    # Patch 0174. The GPU surfaces are the host's own under `gpu_host`
+    # (--fingerprint-gpu-host) and for a macOS persona on an Intel Mac, whose
+    # GPU family has no anchor. The draw above is unchanged, so nothing else
+    # moves; an Intel Mac persona also claims x86, as stock Chrome there does.
+    intel_mac = (platform == "macos" and host["platform"] == "macos"
+                 and host["architecture"] == "x86")
+    if cfg.get("gpu_host") or intel_mac:
+        for section in ("gpu", "webgpu", "gl_limits", "gl_extensions", "gl_precisions"):
+            profile.pop(section, None)
+        media = profile.get("media")
+        if isinstance(media, dict):
+            media.pop("hw_decode_codecs", None)
+            if not media:
+                profile.pop("media")
+        warnings.append(
+            "the GPU strings, GL limits, extensions, precisions, WebGPU adapter and "
+            "hardware decoders are the host's own; the drawn GPU identity only "
+            "conditions the machine axes")
     composed_platform = profile.get("platform")
     if isinstance(composed_platform, dict) and composed_platform.get("name") in ("Windows", "Linux"):
         composed_platform["architecture"] = host["architecture"]
+    if intel_mac and isinstance(composed_platform, dict):
+        composed_platform["architecture"] = "x86"
     # Last, so that nothing merged after the locale surface was settled can
     # leave a value in it whose source nobody can name. That is the state the
     # seeded draw produced, and it is the one this precedence exists to make

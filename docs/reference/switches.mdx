@@ -14,6 +14,7 @@ When the browser refuses a value, it prints `apostate: <reason>` on stderr and e
 | [`--fingerprint`](#fingerprint) | seed, or `host` | seed from the identity file, else a fresh seed |
 | [`--fingerprint-platform`](#fingerprint-platform) | `windows`, `macos`, `linux` | `macos` on a Mac, `windows` on Windows and Linux |
 | [`--fingerprint-anchor`](#fingerprint-anchor) | GPU family id | drawn by the seed |
+| [`--fingerprint-gpu-host`](#fingerprint-gpu-host) | none | off, on for a macOS persona on an Intel Mac |
 | [`--fingerprint-explain`](#fingerprint-explain) | none | off |
 | [`--fingerprint-gpu-vendor`](#per-field-switches) | WebGL vendor string | drawn by the seed |
 | [`--fingerprint-gpu-renderer`](#per-field-switches) | WebGL renderer string | drawn by the seed |
@@ -84,6 +85,15 @@ Pins the GPU family instead of letting the seed draw one. The value is a family 
   apostate: --fingerprint-anchor named 'nope', which is not in the compiled catalogue
   apostate: the compiled catalogue cannot serve this launch; inheriting the host
   ```
+
+### `--fingerprint-gpu-host`
+
+Presents the host's own GPU. A page reads the host's WebGL vendor and renderer strings, GL limits, extensions and shader precisions, WebGPU adapter and hardware video decoders, as stock Chrome on that host shows them. Every other surface is composed exactly as without the switch: the seed still draws a family and a model, because the machine model, CPU, memory, screen and battery follow the drawn model. A launch without the switch is unchanged, so turning it on for new profiles moves no existing seed.
+
+- Use it where the host's GPU family has no family in the table above: an AMD GPU on Windows, an Intel or AMD GPU on Linux, and any Intel Mac.
+- A macOS persona on an Intel Mac gets it without the switch, and claims the `x86` architecture, as stock Chrome there does. The Apple silicon Web Audio math then stays off, because it applies only to a persona that claims `arm`. A macOS persona on Apple silicon, or on a Windows or Linux PC, is unchanged.
+- With `--fingerprint-noise`, readback noise still applies to the host GPU's output.
+- `--fingerprint=host` refuses it, like the other persona switches.
 
 ### `--fingerprint-explain`
 

@@ -24,7 +24,7 @@ except ImportError:
 BASE_CONFIG = {
     "fingerprint": 12345,
     "fingerprint_platform": "windows",
-    "browser_build": "155.0.8059.12",
+    "browser_build": "159.0.8154.34",
     "host_platform": "windows",
     "host_backend": "ANGLE/D3D11",
     "host_logical_cores": 32,
@@ -338,7 +338,7 @@ class CompositionTests(unittest.TestCase):
     def test_identity_changes_with_every_component_of_the_seed_root(self) -> None:
         base = resolver.resolve_with_diagnostics(BASE_CONFIG)["diagnostics"]["identity"]
         for override in ({"fingerprint": 12346},
-                         {"browser_build": "155.0.8059.11"},
+                         {"browser_build": "159.0.8154.33"},
                          {"fingerprint_platform": "macos"}):
             changed = resolver.resolve_with_diagnostics(dict(BASE_CONFIG, **override))
             self.assertNotEqual(base, changed["diagnostics"]["identity"], override)
@@ -354,7 +354,7 @@ class CompositionTests(unittest.TestCase):
         build-bound values (the user agent) move.
         """
         base = resolver.resolve_with_diagnostics(BASE_CONFIG)
-        other = resolver.resolve_with_diagnostics(dict(BASE_CONFIG, browser_build="155.0.8059.11"))
+        other = resolver.resolve_with_diagnostics(dict(BASE_CONFIG, browser_build="159.0.8154.33"))
         self.assertEqual(base["diagnostics"]["axes"], other["diagnostics"]["axes"])
         self.assertEqual(base["diagnostics"]["anchor"], other["diagnostics"]["anchor"])
         self.assertEqual(base["profile"]["id"], other["profile"]["id"])
@@ -479,6 +479,42 @@ class CompositionTests(unittest.TestCase):
                 self.assertIn(family[anchor], (None, claimed), (architecture, anchor))
                 self.assertEqual(claimed, resolved["profile"]["platform"]["architecture"])
             self.assertTrue(drawn)
+
+    def test_gpu_host_serves_the_host_gpu_and_moves_nothing_else(self) -> None:
+        """Mirror of patch 0174: `gpu_host` drops the GPU surfaces only."""
+        gpu = ("gpu", "webgpu", "gl_limits", "gl_extensions", "gl_precisions")
+        for persona in sorted(resolver.PLATFORMS):
+            for seed in range(6):
+                config = dict(BASE_CONFIG, fingerprint=f"gpu-host-{seed}",
+                              fingerprint_platform=persona)
+                composed = resolver.resolve_with_diagnostics(config)
+                host_gpu = resolver.resolve_with_diagnostics(dict(config, gpu_host=True))
+                self.assertIn("gl_limits", composed["profile"])
+                expected = {key: value for key, value in composed["profile"].items()
+                            if key not in gpu}
+                media = dict(expected.get("media") or {})
+                media.pop("hw_decode_codecs", None)
+                if "media" in expected:
+                    expected["media"] = media
+                    if not media:
+                        expected.pop("media")
+                self.assertEqual(expected, host_gpu["profile"], (persona, seed))
+                self.assertEqual(composed["diagnostics"]["anchor"],
+                                 host_gpu["diagnostics"]["anchor"])
+
+    def test_a_macos_persona_on_an_intel_mac_is_an_intel_mac(self) -> None:
+        """Mirror of patch 0174: x86 and the host's GPU on an Intel Mac only."""
+        for host_platform, architecture, intel in (("macos", "x86_64", True),
+                                                   ("macos", "arm64", False),
+                                                   ("windows", "x86_64", False)):
+            profile = resolver.resolve_profile(dict(
+                BASE_CONFIG, fingerprint="intel-mac", fingerprint_platform="macos",
+                host_platform=host_platform, host_backend="ANGLE/Metal",
+                host_architecture=architecture))
+            self.assertEqual("x86" if intel else "arm", profile["platform"]["architecture"],
+                             host_platform)
+            self.assertEqual(not intel, "gpu" in profile, host_platform)
+            self.assertEqual(not intel, "gl_limits" in profile, host_platform)
 
     def test_every_persona_serves_its_own_audio_buffer(self) -> None:
         """The defect the audio axis exists for: baseLatency was the host's.

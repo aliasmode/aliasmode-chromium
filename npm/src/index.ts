@@ -98,6 +98,7 @@ const FINGERPRINT_SWITCHES = {
   "--fingerprint-device-memory": true,
   "--fingerprint-explain": true,
   "--fingerprint-gpu-renderer": true,
+  "--fingerprint-gpu-host": true,
   "--fingerprint-gpu-vendor": true,
   "--fingerprint-hardware-concurrency": true,
   "--fingerprint-locale": true,

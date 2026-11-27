@@ -220,6 +220,24 @@ Use `--fingerprint-anchor` with a family of the persona's own platform. The brow
 An id that is not in the table above is not refused. The browser logs `--fingerprint-anchor named '...', which is not in the compiled catalogue` to stderr and presents the host's own values for every surface. Copy the id exactly.
 </Warning>
 
+## Keep the host's GPU family
+
+A profile that claims another vendor's GPU than the host's can be told apart by rendering and timing. To keep a new profile in the host's GPU family, pass the switch for the host's vendor at every launch of that profile. Do not add it to an existing profile: the family it already drew would change.
+
+| Host GPU | Switch |
+| --- | --- |
+| Windows, Intel | `--fingerprint-anchor=windows-d3d11-intel-79dfeb5b4f99` |
+| Windows, NVIDIA | `--fingerprint-anchor=windows-d3d11-nvidia-0947761dfbe9` |
+| Windows on ARM, Qualcomm | `--fingerprint-anchor=windows-d3d11-qualcomm-6388f9914f3f` |
+| Windows, AMD | `--fingerprint-gpu-host` |
+| macOS, Apple silicon | `--fingerprint-anchor=macos-metal-apple-850a91233555` |
+| macOS, Intel Mac (Intel or AMD GPU) | none: a macOS persona there presents the host's GPU |
+| Linux, NVIDIA | `--fingerprint-anchor=linux-vulkan-nvidia-adf287b8f0ee` |
+| Linux, Intel or AMD | `--fingerprint-gpu-host` |
+| No GPU | none: the seed draws as before |
+
+These rows are for a persona of the host's own OS. A family switch also narrows the model draw to its own models, and `--fingerprint-gpu-renderer` can narrow it further to one model of that family ([Name a model](#name-a-model)). [Switches](/reference/switches#fingerprint-gpu-host) describes `--fingerprint-gpu-host`.
+
 ## Rendering stays on the host
 
 The browser reports the persona's GPU, but the host draws. Canvas, WebGL and WebGPU pixels, and the time they take, come from the host's GPU, or from SwiftShader when the host has none. On a host without a GPU, the claimed WebGPU adapter runs on SwiftShader, and features the software device cannot back fail when a page calls `requestDevice()`. [Known gaps](/known-gaps#rendering-is-the-hosts) lists what a page can measure, and [Hosts](/concepts/hosts#pick-a-host-for-a-persona) which hosts suit which persona.
