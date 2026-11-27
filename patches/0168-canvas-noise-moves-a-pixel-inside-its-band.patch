@@ -1068,7 +1068,7 @@ index 7b1e125b74..f142739e6f 100644
      CheckOverdraw(&clear_flags, CanvasRenderingContext2DState::kNoImage,
                    OverdrawOp::kClearRect);
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
-index f91372d35f..a006f79b79 100644
+index f91372d..9a7303f 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
 @@ -178,6 +178,11 @@ class MODULES_EXPORT Canvas2DRecorderContext : public CanvasPath {
@@ -1092,14 +1092,14 @@ index f91372d35f..a006f79b79 100644
    AntiAliasingMode clip_antialiasing_ = kNotAntiAliased;
    // The paint worklet canvas operates on CSS pixels, and that's different than
    // the HTML canvas which operates on physical pixels. In other words, the
-@@ -908,6 +915,7 @@ void Canvas2DRecorderContext::CompositedDraw(
-     }
-     c->restore();
+@@ -808,6 +815,7 @@ void Canvas2DRecorderContext::Draw(
+   if (!paint_canvas || !paint_canvas->getDeviceClipBounds(&clip_bounds)) {
+     return;
    }
 +  apostate_drawn_ = true;
  
-   composite_flags.setImageFilter(std::move(canvas_filter));
-   c->saveLayer(composite_flags);
+   const CanvasRenderingContext2DState& state = GetState();
+   SkBlendMode global_composite = state.GlobalComposite();
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h
 index 57940e6..cfa0ac9 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d.h

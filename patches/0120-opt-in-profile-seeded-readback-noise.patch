@@ -1776,7 +1776,7 @@ index 766e916ac5..baa2351d14 100644
  
  void WebGLRenderingContextBase::RenderbufferStorageImpl(
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_webgpu_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_webgpu_base.cc
-index 50e37bfe12..686afb8f91 100644
+index 50e37bf..a598f4b 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_webgpu_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_webgpu_base.cc
 @@ -32,6 +32,7 @@
@@ -1787,10 +1787,10 @@ index 50e37bfe12..686afb8f91 100644
  #include "third_party/blink/renderer/modules/webgl/webgl_renderbuffer.h"
  #include "third_party/blink/renderer/modules/webgl/webgl_sampler.h"
  #include "third_party/blink/renderer/modules/webgl/webgl_shader.h"
-@@ -3837,6 +3838,19 @@ void WebGLRenderingContextWebGPUBase::vertexAttribI4uiv(
-   // WebGL allows larger spans (reusing an array for different sizes to
-   // avoid repeated allocations). Extra elements are ignored.
-   if (v.size() < 4) {
+@@ -4347,6 +4348,19 @@ void WebGLRenderingContextWebGPUBase::readPixels(
+   GLFN(driver_, glReadPixelsRobustANGLE)(x, y, width, height, format, type,
+                                          bufSize, nullptr, nullptr, nullptr,
+                                          data_at_offset.data());
 +
 +  // Apostate: same boundary as the GLES backend's ReadPixelsHelper -- the
 +  // caller's view is perturbed, the framebuffer is not. pixelStorei is not
@@ -1804,9 +1804,9 @@ index 50e37bfe12..686afb8f91 100644
 +                                height, format, type,
 +                                WebGLImageConversion::PixelStoreParams());
 +  }
-     InsertGLError(GL_INVALID_VALUE, "vertexAttribI4uiv", "invalid size");
-     return;
-   }
+ }
+ 
+ // **************************************************************************
 diff --git a/third_party/blink/renderer/platform/graphics/static_bitmap_image.h b/third_party/blink/renderer/platform/graphics/static_bitmap_image.h
 index 60de4ba88b..e1809a42be 100644
 --- a/third_party/blink/renderer/platform/graphics/static_bitmap_image.h
