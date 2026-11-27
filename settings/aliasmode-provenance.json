@@ -7,8 +7,8 @@
     "source_revision": "13c20998f1f0bdb257ea035bd4fadad37872ed2d"
   },
   "chromium": {
-    "version": "155.0.8059.85",
-    "source_revision": "0e66b94549a8bd85f03fbdf189b752d6e7b63c32"
+    "version": "159.0.8154.34",
+    "source_revision": "4deb883708d3d25100c5aac2148aafc95dae95ac"
   },
   "license": "GPL-3.0"
 }

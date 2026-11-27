@@ -24,7 +24,7 @@ from .errors import ConfigurationError, ProfileError
 #: and 0.1.1 installs the artifacts published as v0.1.0. What binds a package
 #: to a binary release is the ``tag`` in its release manifest, not this.
 PACKAGE_VERSION = "0.5.1"
-CHROMIUM_VERSION = "155.0.8059.85"
+CHROMIUM_VERSION = "159.0.8154.34"
 CATALOGUE_VERSION = 2
 PROFILE_SCHEMA_VERSION = 3
 SUPPORTED_PLATFORMS = frozenset({"windows", "macos", "linux"})
