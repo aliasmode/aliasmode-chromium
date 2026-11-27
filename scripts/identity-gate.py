@@ -84,8 +84,12 @@ def _children(pid: int) -> list[str]:
     return harness._descendants(harness._processes(), pid)
 
 
-def _profile_from(commands: list[str]) -> dict[str, Any] | None:
+def _profile_from(commands: list[str], user_data_dir: str) -> dict[str, Any] | None:
+    # Only this launch's children: Windows reuses process ids at once, so a
+    # child of an earlier, dying browser can name the same parent id.
     for command in commands:
+        if user_data_dir not in command:
+            continue
         for token in command.split():
             if token.startswith("--apostate-profile="):
                 try:
@@ -121,7 +125,7 @@ def composed(binary: str, args: list[str], timeout: float = 60) -> dict[str, Any
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             time.sleep(1.5)
-            profile = _profile_from(_children(process.pid))
+            profile = _profile_from(_children(process.pid), user_data_dir)
             if profile is not None:
                 return profile
             if process.poll() is not None:
