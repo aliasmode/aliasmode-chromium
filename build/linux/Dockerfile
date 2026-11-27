@@ -16,7 +16,7 @@ RUN sed -i -E 's#http://(archive|security).ubuntu.com/ubuntu/?#https://snapshot.
 # The minimal base has no CA bundle, while the snapshot service uses HTTPS.
 # Bootstrap trust from a hashed Ubuntu package without disabling TLS checks.
 ADD --checksum=sha256:6bac2a01979e210d9eac1d4d56747ec709ea60654744d66705dc3c36e7629e50 \
-    https://archive.ubuntu.com/ubuntu/pool/main/c/ca-certificates/ca-certificates_20260601~24.04.1_all.deb /tmp/ca-certificates.deb
+    https://snapshot.ubuntu.com/ubuntu/20260910T000001Z/pool/main/c/ca-certificates/ca-certificates_20260601~24.04.1_all.deb /tmp/ca-certificates.deb
 RUN dpkg-deb --extract /tmp/ca-certificates.deb /tmp/ca-bootstrap \
  && mkdir -p /etc/ssl/certs \
  && cat /tmp/ca-bootstrap/usr/share/ca-certificates/mozilla/*.crt > /etc/ssl/certs/ca-certificates.crt \
