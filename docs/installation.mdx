@@ -23,7 +23,7 @@ The browser runs on four hosts:
 | macOS on Apple silicon | `apostate-155.0.8059.85-macos-arm64.zip` | 158 MB |
 | Windows x64 | `apostate-155.0.8059.85-windows-x64.zip` | 190 MB |
 
-There is no build for Intel Macs or 32-bit Windows. The packages' install path on Windows has only been tested against a test archive.
+From AliasMode Chromium 159.0.8154.34, Intel Macs have a build, `aliasmode-chromium-<version>-macos-x64.zip`; launch it with [`--fingerprint-gpu-host`](/reference/switches#fingerprint-gpu-host) so a macOS persona shows the Mac's own GPU and `x86`. There is no build for 32-bit Windows. The packages' install path on Windows has only been tested against a test archive.
 
 The Linux archives are `.tar.zst`. The Python package reads them with Python 3.14 or later, the `zstandard` Python package, or the `zstd` command. The Node package needs the `zstd` command or a `tar` that accepts `--zstd`.
 

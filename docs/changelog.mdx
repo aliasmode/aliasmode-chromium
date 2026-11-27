@@ -5,6 +5,14 @@ description: "What changed in each Apostate release, newest first."
 
 Each release publishes browser archives for Linux x64, Linux arm64, macOS arm64 and Windows x64 on [GitHub Releases](https://github.com/heretic-tech/apostate/releases). 0.5.1 is built on Chromium 155.0.8059.31. Releases up to 0.4.4 are built on Chromium 152.0.7977.83. The Python package (`apostate` on PyPI) and the Node package (`@heretic-tech/apostate` on npm) are released with the same version number when their code changes.
 
+## AliasMode Chromium 159.0.8154.34 build 1
+
+Not released yet. Planned as `v159.0.8154.34-aliasmode.1` with Windows x64, Linux x64, macOS arm64 and, for the first time, macOS x64 (Intel) archives. A seed presents the same machine as in 155.0.8059.85 build 5: for 200 seeds per persona, with and without the app's launch switches, the composed profile and the `--fingerprint-explain` report were identical on a Windows and on a Linux host, except for the browser version.
+
+- **Chromium 159.** Built on Chromium 159.0.8154.34. The User-Agent reads `Chrome/159.0.0.0`, and the brand lists and full version are 159's.
+- **Host GPU.** [`--fingerprint-gpu-host`](/reference/switches#fingerprint-gpu-host) presents the host's own GPU: WebGL strings, limits, extensions and precisions, the WebGPU adapter and hardware video decoders. Every other surface is composed as without it. It is for hosts whose GPU has no family in the table, such as an AMD GPU on Windows, an Intel or AMD GPU on Linux, and Intel Macs. It applies only to a persona of the host's own OS; for any other persona the browser ignores it and says so on stderr. A launch without the switch is unchanged.
+- **Intel Macs.** A macOS x64 build. With `--fingerprint-gpu-host`, a macOS persona on an Intel Mac claims `x86` and the Mac's own GPU, as stock Chrome there does. Without the switch it composes as on Apple silicon: `arm` and an Apple GPU.
+
 ## AliasMode Chromium 155.0.8059.85 build 5
 
 Released 6 November 2026 as [`v155.0.8059.85-aliasmode.5`](https://github.com/aliasmode/aliasmode-chromium/releases/tag/v155.0.8059.85-aliasmode.5). Windows x64 and Linux x64 archives; the macOS archive follows. A seed presents the same machine as in build 4.

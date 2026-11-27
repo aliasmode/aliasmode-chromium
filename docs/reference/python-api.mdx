@@ -248,7 +248,7 @@ Deletes the whole cache directory, with every version and target in it and the s
 def target_platform(value: str | None = None) -> str
 ```
 
-Returns `linux-x64`, `linux-arm64`, `macos-arm64` or `windows-x64`. With no value it names this host, and raises `BinaryError` on a host with no build, such as an Intel Mac. It also takes `darwin-arm64`, `mac-arm64`, `osx-arm64`, `win-x64`, `linux-aarch64` and `linux-amd64`.
+Returns `linux-x64`, `linux-arm64`, `macos-arm64`, `macos-x64` or `windows-x64`. With no value it names this host, and raises `BinaryError` on a host with no build, such as Windows on ARM. It also takes `darwin-arm64`, `mac-arm64`, `osx-arm64`, `darwin-x64`, `mac-x64`, `osx-x64`, `win-x64`, `linux-aarch64` and `linux-amd64`.
 
 ### `BinaryManager`
 

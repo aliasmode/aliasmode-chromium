@@ -22,7 +22,7 @@ The host is the computer the browser runs on. A [persona](/concepts/personas) ch
 | macOS, Apple silicon | Windows | Fine for development and testing. From 0.4.4, the persona pairs the ARM CPU with a Qualcomm Adreno GPU ([ARM hosts](#arm-hosts)). In 0.4.3 and earlier, it names a desktop GPU. A few WebGL and WebGPU limits read the Apple GPU's values ([Known gaps](/known-gaps#webgl-and-webgpu-limits-on-apple-silicon)), and the Mac's own cameras and microphones show through ([Known gaps](/known-gaps#cameras-and-microphones)). |
 | macOS, Apple silicon | Linux | The same ARM and WebGL limits as a Windows persona on a Mac. |
 
-There is no build for Intel Macs or 32-bit Windows. Do not run the Linux x64 build under x86 emulation on an ARM machine. In a Docker container under Rosetta on an Apple silicon Mac, FingerprintJS Pro reported `developer_tools` on every run, host mode included (measured 2026-09-23, development build before Apostate 0.4.0, Windows persona and host mode).
+From AliasMode Chromium 159.0.8154.34, Intel Macs have a build (macOS x64). On an Intel Mac, pass [`--fingerprint-gpu-host`](/reference/switches#fingerprint-gpu-host) with a macOS persona: it then claims `x86` and the Mac's own GPU, as stock Chrome there does. Without it, the persona claims Apple silicon on an x86 CPU. There is no build for 32-bit Windows. Do not run the Linux x64 build under x86 emulation on an ARM machine. In a Docker container under Rosetta on an Apple silicon Mac, FingerprintJS Pro reported `developer_tools` on every run, host mode included (measured 2026-09-23, development build before Apostate 0.4.0, Windows persona and host mode).
 
 ## ARM hosts
 

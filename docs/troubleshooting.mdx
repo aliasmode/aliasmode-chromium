@@ -22,14 +22,14 @@ When nothing here matches, run the same launch in [host mode](/concepts/personas
 
   <Accordion title="Apostate does not ship a binary for this host">
     ```text
-    apostate: unsupported host binary target: darwin-x86_64
+    apostate: unsupported host binary target: windows-arm64
     ```
 
-    The Node package says `Apostate does not ship a binary for host darwin/x64; supported targets are linux-x64, linux-arm64, macos-arm64, windows-x64.`
+    The Node package says `Apostate does not ship a binary for host win32/arm64; supported targets are linux-x64, linux-arm64, macos-arm64, macos-x64, windows-x64.`
 
-    **Cause.** The host is not one of the four supported platforms, for example an Intel Mac.
+    **Cause.** The host is not one of the supported platforms, for example 32-bit Windows or Windows on ARM.
 
-    **Fix.** Run on Linux x64, Linux arm64, macOS on Apple silicon or Windows x64. See [Installation](/installation#requirements).
+    **Fix.** Run on Linux x64, Linux arm64, macOS (Apple silicon or Intel) or Windows x64. See [Installation](/installation#requirements).
   </Accordion>
 
   <Accordion title="SHA-256 verification failed">
