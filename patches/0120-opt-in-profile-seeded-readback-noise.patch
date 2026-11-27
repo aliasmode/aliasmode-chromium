@@ -1669,7 +1669,7 @@ index 0000000000..2a418b8ca5
 +#include "base/containers/span.h"
 +#include "third_party/blink/renderer/modules/modules_export.h"
 +#include "third_party/blink/renderer/platform/graphics/gpu/webgl_image_conversion.h"
-+#include "third_party/khronos/GLES2/gl2ext.h"
++#include "gpu/GLES2/gl2extchromium.h"
 +
 +namespace blink {
 +

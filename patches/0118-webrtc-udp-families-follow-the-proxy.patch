@@ -777,3 +777,17 @@ index 3baaf138f7..9bf455f2e6 100644
    void PostAddAddress(bool is_final) override;
  
    void OnReadPacket(AsyncPacketSocket* socket, const ReceivedIpPacket& packet);
+diff --git a/content/browser/renderer_host/p2p/no_op_p2p_socket_manager.cc b/content/browser/renderer_host/p2p/no_op_p2p_socket_manager.cc
+index b00ee09..951ac98 100644
+--- a/content/browser/renderer_host/p2p/no_op_p2p_socket_manager.cc
++++ b/content/browser/renderer_host/p2p/no_op_p2p_socket_manager.cc
+@@ -29,7 +29,8 @@ void NoOpP2PSocketManager::StartNetworkNotifications(
+   // Report an empty network list so nothing is waiting on network changes.
+   network_notification_client_->NetworkListChanged(
+       /*networks=*/{}, /*default_ipv4_local_address=*/net::IPAddress(),
+-      /*default_ipv6_local_address=*/net::IPAddress());
++      /*default_ipv6_local_address=*/net::IPAddress(),
++      /*udp_egress_ipv4=*/false, /*udp_egress_ipv6=*/false);
+ }
+ 
+ void NoOpP2PSocketManager::GetHostAddress(

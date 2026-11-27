@@ -317,7 +317,7 @@ index 3c8bc3925a..9f728d02c7 100644
 +  const auto* profile = base::apostate::Profile::Get();
 +  return profile && profile->ua_platform() &&
 +         *profile->ua_platform() == "Windows" &&
-+         creation_params.CreationType() == kCreateFontByFamily &&
++         creation_params.CreationType() == FontFaceCreationType::kFamily &&
 +         alternate_name != AlternateFontName::kLocalUniqueFace &&
 +         alternate_name != AlternateFontName::kLastResort;
 +}
@@ -426,7 +426,7 @@ index 3c8bc3925a..9f728d02c7 100644
 -  const auto* profile = base::apostate::Profile::Get();
 -  if (profile && profile->ua_platform() &&
 -      *profile->ua_platform() == "Windows" &&
--      creation_params.CreationType() == kCreateFontByFamily &&
+-      creation_params.CreationType() == FontFaceCreationType::kFamily &&
 -      alternate_name != AlternateFontName::kLocalUniqueFace &&
 -      alternate_name != AlternateFontName::kLastResort &&
 -      (!typeface ||

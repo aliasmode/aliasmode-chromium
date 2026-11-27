@@ -1134,7 +1134,7 @@ index 0235130..774f0df 100644
 +#include "base/numerics/checked_math.h"
 +#include "gpu/command_buffer/client/gles2_interface.h"
  #include "third_party/blink/renderer/core/canvas_interventions/apostate_readback_noise.h"
-+#include "third_party/khronos/GLES3/gl3.h"
++#include <GLES3/gl3.h>
  
  namespace blink {
  
@@ -1236,7 +1236,7 @@ index 2a418b8..23a9afd 100644
 +++ b/third_party/blink/renderer/modules/webgl/webgl_readback_noise.h
 @@ -12,6 +12,10 @@
  #include "third_party/blink/renderer/platform/graphics/gpu/webgl_image_conversion.h"
- #include "third_party/khronos/GLES2/gl2ext.h"
+ #include "gpu/GLES2/gl2extchromium.h"
  
 +namespace gpu::gles2 {
 +class GLES2Interface;

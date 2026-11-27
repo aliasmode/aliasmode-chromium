@@ -75,7 +75,7 @@ index 5494547ac3..2ccb72ed7e 100644
      AlternateFontName alternate_font_name) {
    TRACE_EVENT0("fonts", "FontCache::GetFontPlatformData");
  
-+  if (creation_params.CreationType() == kCreateFontByFamily) {
++  if (creation_params.CreationType() == FontFaceCreationType::kFamily) {
 +    if (const AtomicString variable_font =
 +            WindowsVariableFontFamily(creation_params.Family());
 +        !variable_font.empty()) {

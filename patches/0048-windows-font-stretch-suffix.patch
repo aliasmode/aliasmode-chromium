@@ -88,7 +88,7 @@ index 31af2c1f7c..3c8bc3925a 100644
 +  const auto* profile = base::apostate::Profile::Get();
 +  if (profile && profile->ua_platform() &&
 +      *profile->ua_platform() == "Windows" &&
-+      creation_params.CreationType() == kCreateFontByFamily &&
++      creation_params.CreationType() == FontFaceCreationType::kFamily &&
 +      alternate_name != AlternateFontName::kLocalUniqueFace &&
 +      alternate_name != AlternateFontName::kLastResort &&
 +      (!typeface ||

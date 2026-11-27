@@ -454,7 +454,7 @@ index f5a68518b1..87ddac3b7c 100644
    std::optional<LanguageTag> preferred_tag = GetPreferredTag(pref_locale);
    // If `preferred_tag`, it attempts to get a match for it, even if it is not
 diff --git a/ui/base/l10n/l10n_util_unittest.cc b/ui/base/l10n/l10n_util_unittest.cc
-index d0272a1528..37cf8d2451 100644
+index d0272a1..c1de5df 100644
 --- a/ui/base/l10n/l10n_util_unittest.cc
 +++ b/ui/base/l10n/l10n_util_unittest.cc
 @@ -13,6 +13,10 @@
@@ -476,7 +476,7 @@ index d0272a1528..37cf8d2451 100644
  #include "base/test/scoped_path_override.h"
  #include "build/build_config.h"
  #include "testing/gmock/include/gmock/gmock.h"
-@@ -551,6 +556,110 @@ TEST_F(L10nUtilTest, GetAppLocaleWin) {
+@@ -551,6 +556,108 @@ TEST_F(L10nUtilTest, GetAppLocaleWin) {
  using L10nUtilTest = PlatformTest;
  #endif  // !BUILDFLAG(IS_APPLE)
  
@@ -506,7 +506,6 @@ index d0272a1528..37cf8d2451 100644
 +    base::WriteFile(locale_dir.AppendASCII(std::string(tag) + ".pak"), "");
 +  }
 +
-+  const std::string original_locale = base::i18n::GetConfiguredLocale();
 +  std::unique_ptr<base::Environment> env = base::Environment::Create();
 +  const std::optional<std::string> original_language = env->GetVar("LANGUAGE");
 +
@@ -521,7 +520,7 @@ index d0272a1528..37cf8d2451 100644
 +    base::test::ScopedCommandLine scoped;
 +    scoped.GetProcessCommandLine()->RemoveSwitch(switches::kApostateProfile);
 +    env->SetVar("LANGUAGE", "fr");
-+    base::i18n::SetICUDefaultLocale("fr");
++    SetIcuLocaleForTest(GetKnownLanguageTag("fr"));
 +    EXPECT_EQ("fr", l10n_util::GetApplicationLocale("fr"));
 +  }
 +
@@ -533,7 +532,7 @@ index d0272a1528..37cf8d2451 100644
 +    scoped.GetProcessCommandLine()->AppendSwitchASCII(
 +        switches::kApostateProfile, payload(R"({"cpu":{"logical_cores":8}})"));
 +    env->SetVar("LANGUAGE", "fr");
-+    base::i18n::SetICUDefaultLocale("fr");
++    SetIcuLocaleForTest(GetKnownLanguageTag("fr"));
 +    EXPECT_EQ("en-US", l10n_util::GetApplicationLocale("fr"));
 +  }
 +
@@ -551,7 +550,7 @@ index d0272a1528..37cf8d2451 100644
 +    command_line->AppendSwitchASCII(base::apostate::switches::kFingerprintLocale,
 +                                    "de-DE,de");
 +    env->SetVar("LANGUAGE", "fr");
-+    base::i18n::SetICUDefaultLocale("fr");
++    SetIcuLocaleForTest(GetKnownLanguageTag("fr"));
 +    EXPECT_EQ("de-DE", l10n_util::GetApplicationLocale("fr"));
 +  }
 +
@@ -571,7 +570,7 @@ index d0272a1528..37cf8d2451 100644
 +    command_line->AppendSwitchASCII(base::apostate::switches::kFingerprintLocale,
 +                                    "tlh-AA,tlh");
 +    env->SetVar("LANGUAGE", "fr");
-+    base::i18n::SetICUDefaultLocale("fr");
++    SetIcuLocaleForTest(GetKnownLanguageTag("fr"));
 +    EXPECT_EQ("en-US", l10n_util::GetApplicationLocale("fr"));
 +  }
 +
@@ -580,7 +579,6 @@ index d0272a1528..37cf8d2451 100644
 +  } else {
 +    env->UnSetVar("LANGUAGE");
 +  }
-+  base::i18n::SetICUDefaultLocale(original_locale);
 +}
 +#endif  // !BUILDFLAG(IS_APPLE) && !BUILDFLAG(IS_ANDROID)
 +

@@ -795,7 +795,7 @@ index 0000000000..093e4f6c36
 +
 +  const base::TimeTicks now = base::TimeTicks::Now();
 +  VideoFrameMetadata metadata;
-+  metadata.source_size = format_.frame_size;
++  metadata.capture.source_size = format_.frame_size;
 +  metadata.device_scale_factor = 1.0f;
 +  client_->OnIncomingCapturedData(
 +      frame_.as_span(), format_,
@@ -848,8 +848,8 @@ index 0000000000..093e4f6c36
 +  if (!client_) {
 +    return;
 +  }
-+  std::move(callback).Run(RotateAndBlobify(
-+      frame_.data(), static_cast<uint32_t>(frame_.size()), format_, 0));
++  std::move(callback).Run(
++      RotateAndBlobify(frame_.as_span(), format_, /*rotation=*/0));
 +}
 +
 +ApostateVideoCaptureDeviceFactory::ApostateVideoCaptureDeviceFactory(
