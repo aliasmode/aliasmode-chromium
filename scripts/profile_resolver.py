@@ -1911,12 +1911,17 @@ def _resolve_internal(config: Mapping[str, Any] | None = None, **overrides: Any)
 
     _derive_work_area(profile)
     # Patch 0174. The GPU surfaces are the host's own under `gpu_host`
-    # (--fingerprint-gpu-host) and for a macOS persona on an Intel Mac, whose
-    # GPU family has no anchor. The draw above is unchanged, so nothing else
-    # moves; an Intel Mac persona also claims x86, as stock Chrome there does.
-    intel_mac = (platform == "macos" and host["platform"] == "macos"
-                 and host["architecture"] == "x86")
-    if cfg.get("gpu_host") or intel_mac:
+    # (--fingerprint-gpu-host), for a persona of the host's own OS only; for
+    # any other OS the switch is ignored. The draw above is unchanged, so
+    # nothing else moves; a macOS persona on an Intel Mac with it also claims
+    # x86, as stock Chrome there does.
+    gpu_host = bool(cfg.get("gpu_host")) and platform == host["platform"]
+    if cfg.get("gpu_host") and not gpu_host:
+        warnings.append(
+            f"--fingerprint-gpu-host is ignored: the persona's OS '{platform}' "
+            f"is not the host's OS '{host['platform']}'")
+    intel_mac = gpu_host and platform == "macos" and host["architecture"] == "x86"
+    if gpu_host:
         for section in ("gpu", "webgpu", "gl_limits", "gl_extensions", "gl_precisions"):
             profile.pop(section, None)
         media = profile.get("media")

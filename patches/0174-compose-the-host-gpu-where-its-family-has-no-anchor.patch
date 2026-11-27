@@ -12,17 +12,22 @@ the machine axes hang off them, so every other surface is exactly what
 the same seed composes without the switch. Without the switch nothing
 changes, so no existing seed moves.
 
-A macOS persona on an Intel Mac is an Intel Mac: it claims x86, as
-stock Chrome there does, and serves the host's GPU without the switch.
-Claiming x86 also turns off the Apple silicon Web Audio math (patches
-0042, 0055, 0059, 0060), which keys on a claimed arm architecture, so
-audio is the host's own x86 math. HostCapability gains the CPU family
-stock Chrome reports for UA-CH, including arm for an x86 build under
-Rosetta. A macOS persona on Apple silicon, and one on an x86 PC, keep
-what they composed before.
+The host's GPU belongs to the host's OS: a Windows persona on a Linux
+host would serve Mesa strings and Linux decoders under a Windows user
+agent. So the switch applies only to a persona of the host's own OS;
+for any other it is ignored with a warning on stderr and the launch
+composes as without it.
+
+With the switch, a macOS persona on an Intel Mac is an Intel Mac: it
+claims x86, as stock Chrome there does. Claiming x86 also turns off the
+Apple silicon Web Audio math (patches 0042, 0055, 0059, 0060), which
+keys on a claimed arm architecture, so audio is the host's own x86
+math. Without the switch a macOS persona on an Intel Mac keeps its
+stored identity, as before. HostCapability gains the CPU family stock
+Chrome reports for UA-CH, including arm for an x86 build under Rosetta.
 
 diff --git a/base/apostate/compose.cc b/base/apostate/compose.cc
-index 86b66b3..21c92e7 100644
+index 86b66b3..cbee2f0 100644
 --- a/base/apostate/compose.cc
 +++ b/base/apostate/compose.cc
 @@ -648,6 +648,7 @@ constexpr int kMaxOverrideMemoryGib = 4096;
@@ -33,24 +38,36 @@ index 86b66b3..21c92e7 100644
      switches::kFingerprintGpuVendor,
      switches::kFingerprintGpuRenderer,
      switches::kFingerprintHardwareConcurrency,
-@@ -1669,6 +1670,45 @@ std::optional<Composition> Compose(const ComposeRequest& request,
+@@ -1669,6 +1670,55 @@ std::optional<Composition> Compose(const ComposeRequest& request,
    DeriveWorkArea(composition.profile, panel_resolved,
                   &composition.limitations);
  
-+  // An Intel Mac is the one host whose own platform has no anchor of its GPU
-+  // family: the macOS anchor is Apple silicon. Its macOS persona is an Intel
-+  // Mac, so it claims x86 like stock Chrome there, which also leaves Web Audio
-+  // on the host's own math instead of the Apple silicon copies, and it serves
-+  // the host's GPU. The draw is unchanged; only these surfaces move.
-+  const bool intel_mac_persona = composition.platform == "macos" &&
-+                                 request.host.platform == "macos" &&
-+                                 request.host.architecture == "x86";
-+
 +  // --fingerprint-gpu-host: the anchor and the GPU identity are still drawn,
 +  // because the machine axes hang off them and must not move, but the GPU
 +  // surfaces a page reads are taken out of the profile so every hook serves
-+  // the host's own values.
-+  if (request.gpu_host || intel_mac_persona) {
++  // the host's own values. The host's GPU belongs to the host's OS: its
++  // strings, limits and decoders under another OS's persona would contradict
++  // the user agent, so the switch is ignored there and the launch composes as
++  // without it.
++  const bool gpu_host =
++      request.gpu_host && composition.platform == request.host.platform;
++  if (request.gpu_host && !gpu_host) {
++    const std::string ignored =
++        "--fingerprint-gpu-host is ignored: the persona's OS '" +
++        composition.platform + "' is not the host's OS '" +
++        request.host.platform + "'";
++    LOG(ERROR) << "apostate: " << ignored;
++    composition.limitations.push_back(ignored);
++  }
++
++  // The macOS anchor is Apple silicon, so on an Intel Mac a macOS persona that
++  // serves the host's GPU is an Intel Mac: it claims x86 like stock Chrome
++  // there, which also leaves Web Audio on the host's own math instead of the
++  // Apple silicon copies. Without the switch it keeps its stored identity.
++  const bool intel_mac_persona = gpu_host && composition.platform == "macos" &&
++                                 request.host.architecture == "x86";
++
++  if (gpu_host) {
 +    for (const std::string_view section :
 +         {"gpu", "webgpu", "gl_limits", "gl_extensions", "gl_precisions"}) {
 +      composition.profile.Remove(section);
@@ -69,17 +86,15 @@ index 86b66b3..21c92e7 100644
 +        .limitation = std::string(),
 +    });
 +    composition.limitations.push_back(
-+        std::string(request.gpu_host ? "--fingerprint-gpu-host"
-+                                     : "a macOS persona on an Intel Mac") +
-+        ": the GPU strings, GL limits, extensions, precisions, WebGPU adapter "
-+        "and hardware decoders are the host's own; the drawn GPU identity "
-+        "only conditions the machine axes");
++        "--fingerprint-gpu-host: the GPU strings, GL limits, extensions, "
++        "precisions, WebGPU adapter and hardware decoders are the host's own; "
++        "the drawn GPU identity only conditions the machine axes");
 +  }
 +
    // The CPU shows through arithmetic a page can run (the sign of a computed
    // NaN, audio rendering), so a Windows or Linux persona claims the
    // architecture the browser actually runs on. Claiming x86 on an ARM machine
-@@ -1684,6 +1724,9 @@ std::optional<Composition> Compose(const ComposeRequest& request,
+@@ -1684,6 +1734,9 @@ std::optional<Composition> Compose(const ComposeRequest& request,
        platform->Set("architecture", "x86");
  #endif
      }
@@ -89,7 +104,7 @@ index 86b66b3..21c92e7 100644
    }
  
    // A diagnostic handle, not a claim: patch 0004 reads `id` into source_id_
-@@ -1944,6 +1987,7 @@ std::optional<std::string> ComposeProfileForCurrentProcess(
+@@ -1944,6 +1997,7 @@ std::optional<std::string> ComposeProfileForCurrentProcess(
    request.state_directory = state_directory;
    request.pinned_anchor =
        command_line.GetSwitchValueASCII(switches::kFingerprintAnchor);
@@ -98,10 +113,10 @@ index 86b66b3..21c92e7 100644
    request.overrides = std::move(overrides);
  
 diff --git a/base/apostate/compose.h b/base/apostate/compose.h
-index 77398f9..4b0be64 100644
+index 77398f9..bd4bd49 100644
 --- a/base/apostate/compose.h
 +++ b/base/apostate/compose.h
-@@ -84,6 +84,15 @@ inline constexpr char kFingerprintPlatform[] = "fingerprint-platform";
+@@ -84,6 +84,17 @@ inline constexpr char kFingerprintPlatform[] = "fingerprint-platform";
  // Pin the GPU anchor by id instead of drawing one.
  inline constexpr char kFingerprintAnchor[] = "fingerprint-anchor";
  
@@ -111,13 +126,15 @@ index 77398f9..4b0be64 100644
 +// it on moves nothing but the GPU. It exists for hosts whose GPU family has no
 +// anchor (an AMD or Intel GPU on Linux, AMD on Windows, any Intel Mac), so a
 +// new profile there can keep the host's real GPU family instead of claiming
-+// another vendor's. A macOS persona on an Intel Mac gets it without asking.
++// another vendor's. It applies only to a persona of the host's own OS and is
++// ignored, with a warning on stderr, for any other. A macOS persona on an
++// Intel Mac with it also claims x86.
 +inline constexpr char kFingerprintGpuHost[] = "fingerprint-gpu-host";
 +
  // Write the composition report to stdout and exit.
  inline constexpr char kFingerprintExplain[] = "fingerprint-explain";
  
-@@ -266,6 +275,8 @@ struct BASE_EXPORT ComposeRequest {
+@@ -266,6 +277,8 @@ struct BASE_EXPORT ComposeRequest {
    std::string platform;
    // --fingerprint-anchor. Empty means draw one.
    std::string pinned_anchor;
@@ -127,7 +144,7 @@ index 77398f9..4b0be64 100644
    // application locale resolves ahead of it; the composition only reports it
    // when it disagrees with that locale.
 diff --git a/base/apostate/compose_unittest.cc b/base/apostate/compose_unittest.cc
-index 42160c2..0d81126 100644
+index 42160c2..ba10bd3 100644
 --- a/base/apostate/compose_unittest.cc
 +++ b/base/apostate/compose_unittest.cc
 @@ -12,6 +12,7 @@
@@ -138,7 +155,7 @@ index 42160c2..0d81126 100644
  #include <vector>
  
  #include "base/apostate/dispersion_table.h"
-@@ -852,6 +853,88 @@ TEST(ApostateComposeTest, TheAnchorFollowsTheHostCpuFamily) {
+@@ -852,6 +853,122 @@ TEST(ApostateComposeTest, TheAnchorFollowsTheHostCpuFamily) {
    EXPECT_EQ("test-other-cpu", ChosenId(*composition, "anchor"));
  }
  
@@ -147,12 +164,14 @@ index 42160c2..0d81126 100644
 +// composes it without the switch.
 +TEST(ApostateComposeTest, GpuHostServesTheHostGpuAndMovesNothingElse) {
 +  constexpr DispersionAxis kAxes[] = {kOsReleaseAxis, kCpuAxis, kFontAxis};
++  HostCapability host = CapableHost();
++  host.platform = "windows";
 +  const std::optional<Composition> composed =
-+      Compose(RequestFor("gpu-host-seed", kAxes, CapableHost()));
++      Compose(RequestFor("gpu-host-seed", kAxes, host));
 +  ASSERT_TRUE(composed.has_value());
 +  ASSERT_TRUE(composed->profile.FindDict("gl_limits"));
 +
-+  ComposeRequest request = RequestFor("gpu-host-seed", kAxes, CapableHost());
++  ComposeRequest request = RequestFor("gpu-host-seed", kAxes, host);
 +  request.gpu_host = true;
 +  const std::optional<Composition> host_gpu = Compose(request);
 +  ASSERT_TRUE(host_gpu.has_value());
@@ -173,10 +192,29 @@ index 42160c2..0d81126 100644
 +            ProfileJson(*host_gpu));
 +}
 +
-+// The macOS anchor is Apple silicon, so on an Intel Mac a macOS persona claims
-+// x86 and serves the host's GPU, as stock Chrome there does. Apple silicon and
-+// a cross-OS macOS persona on an x86 PC keep what they composed before.
-+TEST(ApostateComposeTest, AMacOsPersonaOnAnIntelMacIsAnIntelMac) {
++// The host's GPU belongs to the host's OS, so under a persona of another OS
++// --fingerprint-gpu-host is ignored and the launch composes as without it.
++TEST(ApostateComposeTest, GpuHostIsIgnoredForAPersonaOfAnotherOs) {
++  constexpr DispersionAxis kAxes[] = {kOsReleaseAxis, kCpuAxis, kFontAxis};
++  // A windows persona on the macOS test host.
++  const std::optional<Composition> composed =
++      Compose(RequestFor("gpu-host-seed", kAxes, CapableHost()));
++  ASSERT_TRUE(composed.has_value());
++
++  ComposeRequest request = RequestFor("gpu-host-seed", kAxes, CapableHost());
++  request.gpu_host = true;
++  const std::optional<Composition> ignored = Compose(request);
++  ASSERT_TRUE(ignored.has_value());
++  EXPECT_TRUE(ignored->profile.contains("gl_limits"));
++  EXPECT_EQ(ProfileJson(*composed), ProfileJson(*ignored));
++  EXPECT_EQ(ChosenId(*composed, "gpu"), ChosenId(*ignored, "gpu"));
++}
++
++// The macOS anchor is Apple silicon, so on an Intel Mac a macOS persona with
++// --fingerprint-gpu-host claims x86 and serves the host's GPU, as stock Chrome
++// there does. Without the switch it keeps its stored identity, and Apple
++// silicon or a cross-OS macOS persona on an x86 PC keep arm.
++TEST(ApostateComposeTest, AMacOsPersonaOnAnIntelMacWithGpuHostIsAnIntelMac) {
 +  static constexpr ConditionKey kMacKey[] = {{"platform", "macos"}};
 +  static constexpr DispersionOption kMacRelease[] = {
 +      {"macos-26", 100, "catalogue-value", "", PackKind::kNotAPack, nullptr,
@@ -193,12 +231,13 @@ index 42160c2..0d81126 100644
 +      kGpuIdentityWithAdapterAxis,
 +  };
 +  const auto ComposeOn = [](std::string_view platform,
-+                            std::string_view architecture) {
++                            std::string_view architecture, bool gpu_host) {
 +    HostCapability host = CapableHost();
 +    host.platform = std::string(platform);
 +    host.architecture = std::string(architecture);
 +    ComposeRequest request = RequestFor("intel-mac-seed", kAxes, host);
 +    request.platform = "macos";
++    request.gpu_host = gpu_host;
 +    return Compose(request);
 +  };
 +  const auto Architecture = [](const Composition& composition) {
@@ -206,22 +245,34 @@ index 42160c2..0d81126 100644
 +        "architecture");
 +  };
 +
-+  const std::optional<Composition> intel = ComposeOn("macos", "x86");
++  const std::optional<Composition> intel = ComposeOn("macos", "x86", true);
 +  ASSERT_TRUE(intel.has_value());
 +  EXPECT_EQ("x86", Architecture(*intel));
 +  EXPECT_FALSE(intel->profile.contains("gpu"));
 +  EXPECT_FALSE(intel->profile.contains("webgpu"));
 +  EXPECT_FALSE(intel->profile.contains("gl_limits"));
 +
-+  for (const auto& [platform, architecture] :
-+       {std::pair<std::string_view, std::string_view>{"macos", "arm"},
-+        {"windows", "x86"}}) {
-+    const std::optional<Composition> kept = ComposeOn(platform, architecture);
-+    ASSERT_TRUE(kept.has_value()) << platform;
-+    EXPECT_EQ("arm", Architecture(*kept)) << platform;
-+    EXPECT_TRUE(kept->profile.contains("gpu")) << platform;
-+    EXPECT_TRUE(kept->profile.contains("gl_limits")) << platform;
-+  }
++  const std::optional<Composition> stored = ComposeOn("macos", "arm", false);
++  ASSERT_TRUE(stored.has_value());
++  const std::optional<Composition> intel_without =
++      ComposeOn("macos", "x86", false);
++  ASSERT_TRUE(intel_without.has_value());
++  EXPECT_EQ(ProfileJson(*stored), ProfileJson(*intel_without));
++  EXPECT_EQ("arm", Architecture(*intel_without));
++  EXPECT_TRUE(intel_without->profile.contains("gl_limits"));
++
++  const std::optional<Composition> apple = ComposeOn("macos", "arm", true);
++  ASSERT_TRUE(apple.has_value());
++  EXPECT_EQ("arm", Architecture(*apple));
++  EXPECT_FALSE(apple->profile.contains("gl_limits"));
++
++  const std::optional<Composition> pc = ComposeOn("windows", "x86", true);
++  ASSERT_TRUE(pc.has_value());
++  const std::optional<Composition> pc_without =
++      ComposeOn("windows", "x86", false);
++  ASSERT_TRUE(pc_without.has_value());
++  EXPECT_EQ(ProfileJson(*pc_without), ProfileJson(*pc));
++  EXPECT_EQ("arm", Architecture(*pc));
 +}
 +
  // WebGPU is the one part of a capability cluster that is not anchor-wide.

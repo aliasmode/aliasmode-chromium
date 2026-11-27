@@ -486,7 +486,8 @@ class CompositionTests(unittest.TestCase):
         for persona in sorted(resolver.PLATFORMS):
             for seed in range(6):
                 config = dict(BASE_CONFIG, fingerprint=f"gpu-host-{seed}",
-                              fingerprint_platform=persona)
+                              fingerprint_platform=persona, host_platform=persona,
+                              host_architecture="arm" if persona == "macos" else "x86")
                 composed = resolver.resolve_with_diagnostics(config)
                 host_gpu = resolver.resolve_with_diagnostics(dict(config, gpu_host=True))
                 self.assertIn("gl_limits", composed["profile"])
@@ -502,19 +503,31 @@ class CompositionTests(unittest.TestCase):
                 self.assertEqual(composed["diagnostics"]["anchor"],
                                  host_gpu["diagnostics"]["anchor"])
 
-    def test_a_macos_persona_on_an_intel_mac_is_an_intel_mac(self) -> None:
-        """Mirror of patch 0174: x86 and the host's GPU on an Intel Mac only."""
-        for host_platform, architecture, intel in (("macos", "x86_64", True),
-                                                   ("macos", "arm64", False),
-                                                   ("windows", "x86_64", False)):
+    def test_gpu_host_is_ignored_for_a_persona_of_another_os(self) -> None:
+        """Mirror of patch 0174: the host's GPU only under the host's own OS."""
+        for persona in sorted(resolver.PLATFORMS):
+            for host_platform in sorted(resolver.PLATFORMS - {persona}):
+                config = dict(BASE_CONFIG, fingerprint=f"gpu-host-{persona}",
+                              fingerprint_platform=persona, host_platform=host_platform)
+                composed = resolver.resolve_profile(config)
+                ignored = resolver.resolve_profile(dict(config, gpu_host=True))
+                self.assertEqual(composed, ignored, (persona, host_platform))
+
+    def test_a_macos_persona_on_an_intel_mac_is_an_intel_mac_with_gpu_host(self) -> None:
+        """Mirror of patch 0174: x86 and the host's GPU on an Intel Mac with the switch."""
+        for host_platform, architecture, gpu_host, intel in (
+                ("macos", "x86_64", True, True),
+                ("macos", "x86_64", False, False),
+                ("macos", "arm64", False, False),
+                ("windows", "x86_64", True, False)):
             profile = resolver.resolve_profile(dict(
                 BASE_CONFIG, fingerprint="intel-mac", fingerprint_platform="macos",
                 host_platform=host_platform, host_backend="ANGLE/Metal",
-                host_architecture=architecture))
-            self.assertEqual("x86" if intel else "arm", profile["platform"]["architecture"],
-                             host_platform)
-            self.assertEqual(not intel, "gpu" in profile, host_platform)
-            self.assertEqual(not intel, "gl_limits" in profile, host_platform)
+                host_architecture=architecture, gpu_host=gpu_host))
+            case = (host_platform, architecture, gpu_host)
+            self.assertEqual("x86" if intel else "arm", profile["platform"]["architecture"], case)
+            self.assertEqual(not intel, "gpu" in profile, case)
+            self.assertEqual(not intel, "gl_limits" in profile, case)
 
     def test_every_persona_serves_its_own_audio_buffer(self) -> None:
         """The defect the audio axis exists for: baseLatency was the host's.

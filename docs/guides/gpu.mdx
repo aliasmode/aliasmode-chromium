@@ -231,12 +231,12 @@ A profile that claims another vendor's GPU than the host's can be told apart by 
 | Windows on ARM, Qualcomm | `--fingerprint-anchor=windows-d3d11-qualcomm-6388f9914f3f` |
 | Windows, AMD | `--fingerprint-gpu-host` |
 | macOS, Apple silicon | `--fingerprint-anchor=macos-metal-apple-850a91233555` |
-| macOS, Intel Mac (Intel or AMD GPU) | none: a macOS persona there presents the host's GPU |
+| macOS, Intel Mac (Intel or AMD GPU) | `--fingerprint-gpu-host`: a macOS persona then also claims the `x86` architecture |
 | Linux, NVIDIA | `--fingerprint-anchor=linux-vulkan-nvidia-adf287b8f0ee` |
 | Linux, Intel or AMD | `--fingerprint-gpu-host` |
 | No GPU | none: the seed draws as before |
 
-These rows are for a persona of the host's own OS. A family switch also narrows the model draw to its own models, and `--fingerprint-gpu-renderer` can narrow it further to one model of that family ([Name a model](#name-a-model)). [Switches](/reference/switches#fingerprint-gpu-host) describes `--fingerprint-gpu-host`.
+These rows are for a persona of the host's own OS. For a persona of another OS, the browser ignores `--fingerprint-gpu-host`, logs `apostate: --fingerprint-gpu-host is ignored: ...` to stderr and composes as without it. A family switch also narrows the model draw to its own models, and `--fingerprint-gpu-renderer` can narrow it further to one model of that family ([Name a model](#name-a-model)). [Switches](/reference/switches#fingerprint-gpu-host) describes `--fingerprint-gpu-host`.
 
 ## Rendering stays on the host
 
