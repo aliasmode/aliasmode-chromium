@@ -157,7 +157,8 @@ def test_the_page_sees_only_the_persona_devices(persona_seed, catalogue, server,
 def test_a_track_is_the_device_it_opened(persona_seed, catalogue, server, binary, record):
     persona, seed = persona_seed
     values, _ = _persona_run(record, server, binary, persona, seed, catalogue)
-    by_id = {device["deviceId"]: device for device in values["after"]}
+    # Keyed by kind too: "default" names a microphone and a speaker.
+    by_id = {(device["kind"], device["deviceId"]): device for device in values["after"]}
     opened = [entry for entry in (values["audio"], values["video"], *values["each"]) if entry]
     record.update(opened=opened)
     if not opened:
@@ -165,7 +166,7 @@ def test_a_track_is_the_device_it_opened(persona_seed, catalogue, server, binary
     for entry in opened:
         assert "error" not in entry, entry
         for track in entry["tracks"]:
-            device = by_id.get(track["settings"].get("deviceId"))
+            device = by_id.get((f"{track['kind']}input", track["settings"].get("deviceId")))
             assert device is not None, f"settings.deviceId names no listed device: {track}"
             assert track["label"] == device["label"], (track, device)
             if track["kind"] == "video":
