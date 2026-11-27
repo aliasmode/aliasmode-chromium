@@ -150,7 +150,7 @@ index 0000000..bb5a292
 +// The accuracy, in metres, of a value that names none: a Wi-Fi fix.
 +constexpr double kDefaultAccuracyMeters = 50;
 +
-+// How long a first fix takes after the provider is started and granted. A
++// How long a first fix takes after the provider is started. A
 +// fix at once would be faster than any provider a real device has.
 +constexpr base::TimeDelta kFirstFixMin = base::Milliseconds(400);
 +constexpr base::TimeDelta kFirstFixMax = base::Milliseconds(1200);
@@ -229,7 +229,7 @@ index 0000000..bb5a292
 +  // A stationary device reports one fix; a later start, such as a change of
 +  // accuracy, keeps it.
 +  if (state_ == mojom::GeolocationDiagnostics::ProviderState::kStopped ||
-+      !is_permission_granted_ || result_ || first_fix_timer_.IsRunning()) {
++      result_ || first_fix_timer_.IsRunning()) {
 +    return;
 +  }
 +  first_fix_timer_.Start(FROM_HERE,
@@ -284,8 +284,8 @@ index 0000000..048ab0a
 +// AliasMode: serves the position --fingerprint-geolocation=<lat>,<lon>[,<m>]
 +// names, as a stationary device would report it, and never asks the host or
 +// the network where it is. One fix per start, 400 to 1200 ms after the
-+// provider is both started and granted; altitude, heading and speed stay
-+// unset. A value that does not parse, or is out of range, yields
++// provider is started (only for a granted page); altitude, heading and speed
++// stay unset. A value that does not parse, or is out of range, yields
 +// POSITION_UNAVAILABLE rather than the host's location.
 +class FixedLocationProvider : public LocationProvider {
 + public:
