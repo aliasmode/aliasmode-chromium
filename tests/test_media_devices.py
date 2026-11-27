@@ -20,16 +20,21 @@ import pytest
 import harness
 
 KINDS = ("audioinput", "audiooutput", "videoinput")
-_RUNS: dict[tuple[str | None, str], tuple[dict, dict | None]] = {}
+_RUNS: dict[tuple[str | None, str, str], tuple[dict, dict | None]] = {}
+#: The device tables: the first, and the second that --fingerprint-media-catalogue=2 selects.
+CATALOGUES = ("1", "2")
 
 
-def _run(server, binary, persona, seed, timeout=90):
+def _run(server, binary, persona, seed, catalogue="1", timeout=90):
     """The bare binary on media.html, no automation, as harness.run_probe launches it."""
-    key = (persona, seed)
+    key = (persona, seed, catalogue)
     if key in _RUNS:
         return _RUNS[key]
     token = secrets.token_hex(8)
-    launch = harness.Launch(persona, seed, "bare", args=["--use-fake-ui-for-media-stream"])
+    args = ["--use-fake-ui-for-media-stream"]
+    if catalogue != "1":
+        args.append(f"--fingerprint-media-catalogue={catalogue}")
+    launch = harness.Launch(persona, seed, "bare", args=args)
     user_data_dir = tempfile.mkdtemp(prefix="apostate-media-")
     command = [binary, f"--user-data-dir={user_data_dir}", "--no-first-run", "--no-default-browser-check",
                "--headless=new", *harness.switches(launch)]
@@ -70,16 +75,13 @@ def _device_name(label):
     return label
 
 
-def _expected(profile, host_kinds):
+def _expected(profile):
     """Per kind, the labels the persona lists after a permission grant."""
     media = profile.get("media") or {}
     windows = profile["platform"]["name"] == "Windows"
     want = {}
     for kind in KINDS:
         devices = [_chrome_label(device["label"]) for device in media.get("devices", []) if device["kind"] == kind]
-        if not devices and kind in host_kinds:
-            # A machine with none of this kind shows its spare when the host has one.
-            devices = [_chrome_label(device["label"]) for device in media.get("spare_devices", []) if device["kind"] == kind][:1]
         if devices and kind != "videoinput":
             virtual = [f"Default - {devices[0]}"] + ([f"Communications - {devices[0]}"] if windows else [])
             devices = virtual + devices
@@ -87,19 +89,20 @@ def _expected(profile, host_kinds):
     return want
 
 
-def _host(server, binary):
+def _host_labels(server, binary):
     values, _ = _run(server, binary, None, "host")
-    return {device["kind"] for device in values["before"]}, {device["label"] for device in values["after"] if device["label"]}
+    return {device["label"] for device in values["after"] if device["label"]}
 
 
-def test_the_page_sees_only_the_persona_devices(persona_seed, server, binary, record):
+@pytest.mark.parametrize("catalogue", CATALOGUES)
+def test_the_page_sees_only_the_persona_devices(persona_seed, catalogue, server, binary, record):
     persona, seed = persona_seed
-    host_kinds, host_labels = _host(server, binary)
-    values, profile = _run(server, binary, persona, seed)
+    host_labels = _host_labels(server, binary)
+    values, profile = _run(server, binary, persona, seed, catalogue)
     assert profile is not None, "no composed profile was found on a child process"
-    want = _expected(profile, host_kinds)
+    want = _expected(profile)
     got = {kind: [device["label"] for device in values["after"] if device["kind"] == kind] for kind in KINDS}
-    record.update(host_kinds=sorted(host_kinds), want=want, got=got)
+    record.update(want=want, got=got)
 
     # No host label, unless the persona names the same device.
     page = {_device_name(label) for labels in got.values() for label in labels}
@@ -116,9 +119,10 @@ def test_the_page_sees_only_the_persona_devices(persona_seed, server, binary, re
     assert {kind: Counter(labels) for kind, labels in got.items()} == {kind: Counter(labels) for kind, labels in want.items()}
 
 
-def test_a_track_is_the_device_it_opened(persona_seed, server, binary, record):
+@pytest.mark.parametrize("catalogue", CATALOGUES)
+def test_a_track_is_the_device_it_opened(persona_seed, catalogue, server, binary, record):
     persona, seed = persona_seed
-    values, _ = _run(server, binary, persona, seed)
+    values, _ = _run(server, binary, persona, seed, catalogue)
     by_id = {device["deviceId"]: device for device in values["after"]}
     opened = [entry for entry in (values["audio"], values["video"], *values["each"]) if entry]
     record.update(opened=opened)
@@ -143,7 +147,7 @@ def test_a_track_is_the_device_it_opened(persona_seed, server, binary, record):
 def test_same_seed_same_devices(persona_seed, server, binary, record):
     persona, seed = persona_seed
     first, _ = _run(server, binary, persona, seed)
-    _RUNS.pop((persona, seed))
+    _RUNS.pop((persona, seed, "1"))
     second, _ = _run(server, binary, persona, seed)
     labels = lambda values: sorted((device["kind"], device["label"]) for device in values["after"])  # noqa: E731
     record.update(first=labels(first), second=labels(second))

@@ -104,6 +104,7 @@ const FINGERPRINT_SWITCHES = {
   "--fingerprint-gpu-vendor": true,
   "--fingerprint-hardware-concurrency": true,
   "--fingerprint-locale": true,
+  "--fingerprint-media-catalogue": true,
   "--fingerprint-noise": true,
   "--fingerprint-platform": true,
   "--fingerprint-screen-height": true,

@@ -1588,6 +1588,8 @@ def main(argv: list[str] | None = None) -> int:
         # profile is serialised; `extensions` is last of the axes because
         # nothing is conditioned on it either, and it describes what the
         # machine's owner installed rather than what the machine is.
+        # `media_topology_v2` follows `media_topology`, and the compositor
+        # draws only one of the two: v2 under --fingerprint-media-catalogue=2.
         order = {
             name: index
             for index, name in enumerate(
@@ -1602,6 +1604,7 @@ def main(argv: list[str] | None = None) -> int:
                     "furniture",
                     "font_packs",
                     "media_topology",
+                    "media_topology_v2",
                     "audio",
                     "network",
                     "battery",

@@ -196,11 +196,10 @@ Without this section, WebGPU shows the host's adapter. On Linux, `requestAdapter
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `hw_decode_codecs` | array of `h264`, `vp8`, `vp9`, `hevc`, `av1` | Codecs the claimed GPU decodes in hardware. `MediaCapabilities.decodingInfo()` reports these as `powerEfficient`. It does not change which codecs play. |
-| `audioinput_count` | integer, 0 to 16 | Microphones `enumerateDevices()` lists. With a count set, the list replaces the host's. Microphone `i` opens the host's microphone `i`, or its first one when the host has fewer, or a synthetic microphone when it has none. |
+| `audioinput_count` | integer, 0 to 16 | Microphones `enumerateDevices()` lists. With a count set, the list replaces the host's, and a count of 0 hides the host's microphones. Microphone `i` opens the host's microphone `i`, or its first one when the host has fewer, or a synthetic microphone when it has none. |
 | `videoinput_count` | integer, 0 to 16 | Cameras, the same way. A camera beyond the host's camera count is synthetic. |
 | `audiooutput_count` | integer, 0 to 16 | Speakers, the same way. Every speaker plays on the host's default output, or on a silent output when the host has none. |
 | `devices` | array of up to 48 objects | The devices `enumerateDevices()` lists, each `{"kind": "audiooutput", "label": "Speakers (Realtek(R) Audio)", "group": "realtek-onboard"}`. `kind` is `audioinput`, `audiooutput` or `videoinput`. Entries with the same `group` are one physical device and share a `groupId`. A page reads the labels only after a permission is granted. A camera can add `facing` (`user` or `environment`) and `formats` (`hd`, `fhd` or `uhd`, its largest frame size; default `fhd`). A microphone can add `audio`, `{"sample_rate": 48000, "channels": 1, "buffer_frames": 480}`, which is also the default. |
-| `spare_devices` | array of up to 3 objects | One device per kind at most, in the form of `devices`. It is listed only when the machine has no device of its kind and the host has one, so the host's microphone or camera stays usable. |
 
 ## `speech`
 

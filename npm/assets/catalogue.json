@@ -291,6 +291,18 @@
    "file": "dispersion/media_topology.json",
    "label": "media_topology",
    "option_sets": 14,
+   "options": 29,
+   "selection": "single",
+   "servability": "none"
+  },
+  {
+   "axis": "media_topology_v2",
+   "conditioned_on": [
+    "machine_class"
+   ],
+   "file": "dispersion/media_topology_v2.json",
+   "label": "media_topology_v2",
+   "option_sets": 14,
    "options": 435,
    "selection": "single",
    "servability": "none"
@@ -366,6 +378,7 @@
   "furniture",
   "font_packs",
   "media_topology",
+  "media_topology_v2",
   "audio",
   "network",
   "battery",

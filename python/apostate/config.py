@@ -125,6 +125,7 @@ FINGERPRINT_SWITCHES = frozenset({
     "--fingerprint-gpu-vendor",
     "--fingerprint-hardware-concurrency",
     "--fingerprint-locale",
+    "--fingerprint-media-catalogue",
     "--fingerprint-noise",
     "--fingerprint-platform",
     "--fingerprint-screen-height",

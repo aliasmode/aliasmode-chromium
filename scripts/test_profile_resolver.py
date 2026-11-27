@@ -503,6 +503,31 @@ class CompositionTests(unittest.TestCase):
                 self.assertEqual(composed["diagnostics"]["anchor"],
                                  host_gpu["diagnostics"]["anchor"])
 
+    def test_media_catalogue_2_moves_only_the_media_devices(self) -> None:
+        """Mirror of patch 0177: `media_catalogue` 2 draws media_topology_v2 instead."""
+        tables = resolver.load_dispersion()
+        v1_values = [option["value"] for option_set in tables["media_topology"]["option_sets"]
+                     for option in option_set["options"]]
+        v2_values = [option["value"] for option_set in tables["media_topology_v2"]["option_sets"]
+                     for option in option_set["options"]]
+        moved = 0
+        for persona in sorted(resolver.PLATFORMS):
+            for seed in range(8):
+                config = dict(BASE_CONFIG, fingerprint=f"media-catalogue-{seed}",
+                              fingerprint_platform=persona)
+                first = resolver.resolve_profile(config)
+                second = resolver.resolve_profile(dict(config, media_catalogue=2))
+                self.assertIn({"media": {key: first["media"][key] for key in first["media"]
+                                         if key != "hw_decode_codecs"}}, v1_values)
+                self.assertIn({"media": {key: second["media"][key] for key in second["media"]
+                                         if key != "hw_decode_codecs"}}, v2_values)
+                for profile in (first, second):
+                    profile["media"] = {key: value for key, value in profile["media"].items()
+                                        if key == "hw_decode_codecs"}
+                self.assertEqual(first, second, (persona, seed))
+                moved += 1
+        self.assertTrue(moved)
+
     def test_gpu_host_is_ignored_for_a_persona_of_another_os(self) -> None:
         """Mirror of patch 0174: the host's GPU only under the host's own OS."""
         for persona in sorted(resolver.PLATFORMS):

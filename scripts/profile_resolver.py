@@ -65,6 +65,10 @@ AXES = (
     "furniture",
     "font_packs",
     "media_topology",
+    # Drawn instead of media_topology only under `media_catalogue` 2
+    # (--fingerprint-media-catalogue=2, patch 0177), so a seed composed without
+    # it keeps the devices it always had.
+    "media_topology_v2",
     "audio",
     "network",
     "battery",
@@ -1772,7 +1776,10 @@ def _resolve_internal(config: Mapping[str, Any] | None = None, **overrides: Any)
     ) if isinstance(locale_policy, str) else None
     locale_sources: dict[str, dict[str, Any]] | None = None
 
+    media_catalogue = cfg.get("media_catalogue") or 1
     for axis in AXES:
+        if axis == ("media_topology" if media_catalogue == 2 else "media_topology_v2"):
+            continue
         table = tables[axis]
         if axis == "voices":
             # The locale surface is settled first, because this key is a

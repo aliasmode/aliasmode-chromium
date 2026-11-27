@@ -15,6 +15,7 @@ When the browser refuses a value, it prints `apostate: <reason>` on stderr and e
 | [`--fingerprint-platform`](#fingerprint-platform) | `windows`, `macos`, `linux` | `macos` on a Mac, `windows` on Windows and Linux |
 | [`--fingerprint-anchor`](#fingerprint-anchor) | GPU family id | drawn by the seed |
 | [`--fingerprint-gpu-host`](#fingerprint-gpu-host) | none | off |
+| [`--fingerprint-media-catalogue`](#fingerprint-media-catalogue) | `2` | the first device table |
 | [`--fingerprint-explain`](#fingerprint-explain) | none | off |
 | [`--fingerprint-gpu-vendor`](#per-field-switches) | WebGL vendor string | drawn by the seed |
 | [`--fingerprint-gpu-renderer`](#per-field-switches) | WebGL renderer string | drawn by the seed |
@@ -97,6 +98,10 @@ Presents the host's own GPU. A page reads the host's WebGL vendor and renderer s
 - With it, a macOS persona on an Intel Mac also claims the `x86` architecture, as stock Chrome there does. The Apple silicon Web Audio math then stays off, because it applies only to a persona that claims `arm`. Without it, a macOS persona on an Intel Mac composes as before: the stored identity wins.
 - With `--fingerprint-noise`, readback noise still applies to the host GPU's output.
 - `--fingerprint=host` refuses it, like the other persona switches.
+
+### `--fingerprint-media-catalogue`
+
+With `2`, the seed draws the machine's microphones, cameras and speakers from the second device table. It has more devices per machine class, with USB camera labels in Chrome's form, such as `HD Pro Webcam C920 (046d:082d)`, and each camera's size class and facing mode. Any other value, or no switch, draws from the first table, so a seed keeps the devices it was composed with. Pass it for profiles created with it and for no others. Every other surface is composed as without the switch.
 
 ### `--fingerprint-explain`
 

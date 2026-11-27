@@ -103,9 +103,10 @@ WebRTC's send codecs come from the encoders the host has. Real Windows machines 
 
 What is left:
 
-- The labels, camera sizes and facing modes come from the device model AliasMode Firefox uses, written in Chrome's label forms. They are not measured on Chrome.
+- Under `--fingerprint-media-catalogue=2`, the labels, camera sizes and facing modes come from the device model AliasMode Firefox uses, written in Chrome's label forms. They are not measured on Chrome.
 - A page that opens a camera sees the host camera's picture and, through `ImageCapture.takePhoto()`, its photo size.
-- A machine with no device of a kind lists one, named from its machine class, when the host has that kind. A Linux server persona has no such device, so the host's microphone and camera cannot be used.
+- A machine with no device of a kind lists none, even when the host has one. A page cannot use the host's microphone or camera under a persona whose machine has none, and `getUserMedia()` for that kind fails with `NotFoundError`.
+- Profiles created without [`--fingerprint-media-catalogue=2`](/reference/switches#fingerprint-media-catalogue) keep the older, smaller device table, so their labels are not in Chrome's form for USB cameras.
 - A microphone reports the persona's format, 48 kHz mono unless the profile names another, and the host's microphone is converted to it. This is not yet checked on a macOS host.
 
 **What to do.** Where the picture matters, run the persona on a host with no camera, so the camera sends the synthetic picture described [below](#cameras-and-microphones-are-synthetic).

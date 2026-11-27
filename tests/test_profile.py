@@ -237,10 +237,6 @@ def test_media_devices(case, record):
     got = {kind: devices.count(kind) for kind in ("audioinput", "audiooutput", "videoinput")}
     # Without a permission grant Chrome lists at most one device of each kind.
     want = {kind: min(1, media.get(f"{kind}_count", 0)) for kind in got}
-    # A machine with none of a kind lists its spare device when the host has one.
-    for spare in media.get("spare_devices", []):
-        if want[spare["kind"]] == 0 and got[spare["kind"]] == 1:
-            want[spare["kind"]] = 1
     compare(record, {kind: (got[kind], want[kind]) for kind in got})
 
 

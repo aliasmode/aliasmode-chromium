@@ -6,17 +6,15 @@ host's devices stayed listed under their own names and groups, and only
 the shortfall was made up, so a Windows persona on a Mac listed the
 Mac's microphone by name after a permission grant.
 
-The list is the same on every host. What opens is worked out from the
-host each time: device i opens host device i, a microphone beyond the
-host's count opens the host's first one, a camera beyond it is the
-synthetic camera, since one host camera cannot be opened twice, and
-every speaker plays on the host's default output. With no host device
-of a kind, the existing synthetic devices serve. The default and, for a
-Windows persona, communications entries carry the persona's first
-device and open the host's default.
-
-A persona whose machine has no microphone or no camera lists one, named
-from its machine class, when the host has one, so calls keep working.
+The list is a function of the composed profile alone. What opens is
+worked out from the host each time: device i opens host device i, a
+microphone beyond the host's count opens the host's first one, a camera
+beyond it is the synthetic camera, since one host camera cannot be
+opened twice, and every speaker plays on the host's default output.
+With no host device of a kind, the existing synthetic devices serve. A
+kind the persona's machine lacks is not listed even when the host has
+it. The default and, for a Windows persona, communications entries
+carry the persona's first device and open the host's default.
 
 An open track agrees with the list: its label is the persona's, a
 microphone reports the persona's sample rate, channels and buffer, and
@@ -24,8 +22,80 @@ a camera offers the sizes of its persona class that the host camera
 has, at up to 30 fps, with no pan, tilt or zoom and the persona's
 photo state.
 
+--fingerprint-media-catalogue=2 draws the devices from a second table,
+media_topology_v2. Without it the compositor skips that table, and
+every seed draws the same devices as before.
+
+diff --git a/base/apostate/compose.cc b/base/apostate/compose.cc
+index 21c92e7..1d815cf 100644
+--- a/base/apostate/compose.cc
++++ b/base/apostate/compose.cc
+@@ -649,6 +649,7 @@ constexpr std::string_view kShapingSwitches[] = {
+     switches::kFingerprintPlatform,
+     switches::kFingerprintAnchor,
+     switches::kFingerprintGpuHost,
++    switches::kFingerprintMediaCatalogue,
+     switches::kFingerprintGpuVendor,
+     switches::kFingerprintGpuRenderer,
+     switches::kFingerprintHardwareConcurrency,
+@@ -1417,6 +1418,15 @@ std::optional<Composition> Compose(const ComposeRequest& request,
+   bool panel_resolved = false;
+ 
+   for (const DispersionAxis& axis : request.axes) {
++    // Two tables describe the media devices and one is drawn. Each axis draws
++    // from its own substream, so skipping one moves no other axis: a seed
++    // composed with the first table composes exactly as before the second
++    // existed.
++    if (axis.axis == (request.media_catalogue == 2 ? "media_topology"
++                                                   : "media_topology_v2")) {
++      continue;
++    }
++
+     // The voices table is keyed on the application locale the launch named, so
+     // the locale surface has to be settled before it. It is settled as late as
+     // possible otherwise, because the §5 order puts locale last.
+@@ -1988,6 +1998,10 @@ std::optional<std::string> ComposeProfileForCurrentProcess(
+   request.pinned_anchor =
+       command_line.GetSwitchValueASCII(switches::kFingerprintAnchor);
+   request.gpu_host = command_line.HasSwitch(switches::kFingerprintGpuHost);
++  request.media_catalogue = command_line.GetSwitchValueASCII(
++                                switches::kFingerprintMediaCatalogue) == "2"
++                                ? 2
++                                : 1;
+   request.accept_languages = command_line.GetSwitchValueASCII(kLangSwitch);
+   request.overrides = std::move(overrides);
+ 
+diff --git a/base/apostate/compose.h b/base/apostate/compose.h
+index 4b0be64..8569bc7 100644
+--- a/base/apostate/compose.h
++++ b/base/apostate/compose.h
+@@ -93,6 +93,14 @@ inline constexpr char kFingerprintAnchor[] = "fingerprint-anchor";
+ // another vendor's. A macOS persona on an Intel Mac gets it without asking.
+ inline constexpr char kFingerprintGpuHost[] = "fingerprint-gpu-host";
+ 
++// Draw the media devices from the second device catalogue,
++// media_topology_v2, instead of media_topology. Only the value 2 selects it.
++// A seed composed without the switch keeps the devices it always had, so a
++// launcher passes it for profiles created with that catalogue and for no
++// other.
++inline constexpr char kFingerprintMediaCatalogue[] =
++    "fingerprint-media-catalogue";
++
+ // Write the composition report to stdout and exit.
+ inline constexpr char kFingerprintExplain[] = "fingerprint-explain";
+ 
+@@ -277,6 +285,9 @@ struct BASE_EXPORT ComposeRequest {
+   std::string pinned_anchor;
+   // --fingerprint-gpu-host: the GPU surfaces are the host's own.
+   bool gpu_host = false;
++  // --fingerprint-media-catalogue: which media device table is drawn, 1
++  // (media_topology) or 2 (media_topology_v2).
++  int media_catalogue = 1;
+   // --lang as given. Inert under a composed profile, because the composed
+   // application locale resolves ahead of it; the composition only reports it
+   // when it disagrees with that locale.
 diff --git a/base/apostate/media_devices.cc b/base/apostate/media_devices.cc
-index d9faa29..7744c90 100644
+index d9faa29..7fd80e3 100644
 --- a/base/apostate/media_devices.cc
 +++ b/base/apostate/media_devices.cc
 @@ -8,6 +8,7 @@
@@ -36,7 +106,7 @@ index d9faa29..7744c90 100644
  #include "base/strings/strcat.h"
  #include "base/strings/string_number_conversions.h"
  
-@@ -19,100 +20,180 @@ constexpr char kAudioInputPrefix[] = "apostate-audioinput-";
+@@ -19,100 +20,176 @@ constexpr char kAudioInputPrefix[] = "apostate-audioinput-";
  constexpr char kAudioOutputPrefix[] = "apostate-audiooutput-";
  constexpr char kVideoInputPrefix[] = "apostate-videoinput-";
  
@@ -80,6 +150,18 @@ index d9faa29..7744c90 100644
 +      return kAudioOutputPrefix;
 +    case MediaDeviceKind::kVideoInput:
 +      return kVideoInputPrefix;
++  }
++  NOTREACHED();
++}
++
++std::optional<int> Count(const Profile& profile, MediaDeviceKind kind) {
++  switch (kind) {
++    case MediaDeviceKind::kAudioInput:
++      return profile.media_audioinput_count();
++    case MediaDeviceKind::kAudioOutput:
++      return profile.media_audiooutput_count();
++    case MediaDeviceKind::kVideoInput:
++      return profile.media_videoinput_count();
    }
 -  return StrCat({last, " (", NumberToString(index - seen + 2), ")"});
 +  NOTREACHED();
@@ -93,18 +175,6 @@ index d9faa29..7744c90 100644
 -                          size_t index,
 -                          std::string_view fallback_prefix) {
 -  size_t seen = 0;
-+std::optional<int> Count(const Profile& profile, MediaDeviceKind kind) {
-+  switch (kind) {
-+    case MediaDeviceKind::kAudioInput:
-+      return profile.media_audioinput_count();
-+    case MediaDeviceKind::kAudioOutput:
-+      return profile.media_audiooutput_count();
-+    case MediaDeviceKind::kVideoInput:
-+      return profile.media_videoinput_count();
-+  }
-+  NOTREACHED();
-+}
-+
 +// The entries of one kind, in catalogue order.
 +std::vector<const Profile::MediaDevice*> OfKind(
 +    const std::vector<Profile::MediaDevice>& devices,
@@ -202,18 +272,14 @@ index d9faa29..7744c90 100644
 +  const std::optional<int> count = Count(*profile, kind);
 +  if (!count.has_value() || *count < 0) {
 +    return result;
-+  }
-+
-+  const std::string_view kind_name = KindName(kind);
-+  std::vector<const Profile::MediaDevice*> named =
-+      OfKind(profile->media_devices(), kind_name);
-+  size_t wanted = static_cast<size_t>(*count);
-+  if (wanted == 0 && host_device_count > 0) {
-+    named = OfKind(profile->media_spare_devices(), kind_name);
-+    wanted = std::min<size_t>(named.size(), 1);
    }
 -  return Build(*profile, profile->media_audiooutput_count(), "audiooutput",
 -               kAudioOutputPrefix, host_device_count);
++
++  const std::string_view kind_name = KindName(kind);
++  const std::vector<const Profile::MediaDevice*> named =
++      OfKind(profile->media_devices(), kind_name);
++  const size_t wanted = static_cast<size_t>(*count);
 +
 +  const std::string_view prefix = Prefix(kind);
 +  for (size_t i = 0; i < wanted; ++i) {
@@ -288,7 +354,7 @@ index d9faa29..7744c90 100644
  
  bool IsSyntheticAudioInputId(std::string_view id) {
 diff --git a/base/apostate/media_devices.h b/base/apostate/media_devices.h
-index 708d6da..e9f39c4 100644
+index 708d6da..338d820 100644
 --- a/base/apostate/media_devices.h
 +++ b/base/apostate/media_devices.h
 @@ -8,6 +8,7 @@
@@ -393,9 +459,9 @@ index 708d6da..e9f39c4 100644
 +//     host camera cannot be opened twice;
 +//   * every speaker plays on the host's default output;
 +//   * with no host device of the kind, every device is synthetic.
-+// A persona whose machine has no device of a kind still lists one, from the
-+// profile's spare devices, when the host has that kind, so a call placed from
-+// that persona can use the host's microphone or camera.
++// A persona whose machine has no device of a kind lists none, whatever the
++// host has, so getUserMedia() for that kind fails as it does on such a
++// machine.
 +BASE_EXPORT std::vector<PersonaMediaDevice> PersonaDevices(
 +    MediaDeviceKind kind,
      size_t host_device_count);
@@ -437,7 +503,7 @@ index 708d6da..e9f39c4 100644
  // identity and the device identifier.
  //
 diff --git a/base/apostate/profile.cc b/base/apostate/profile.cc
-index a2fc1c6..fadce24 100644
+index a2fc1c6..c396a95 100644
 --- a/base/apostate/profile.cc
 +++ b/base/apostate/profile.cc
 @@ -202,6 +202,12 @@ const std::optional<ProxyCredentials>& AdoptedProxyCredentials() {
@@ -474,7 +540,7 @@ index a2fc1c6..fadce24 100644
                       << "ignoring";
            continue;
          }
-@@ -988,17 +1000,62 @@ Profile* Profile::ParseOrNull(const std::string& encoded) {
+@@ -988,17 +1000,59 @@ Profile* Profile::ParseOrNull(const std::string& encoded) {
              label->size() > 256 || group->empty() || group->size() > 128 ||
              (*kind != "audioinput" && *kind != "audiooutput" &&
               *kind != "videoinput")) {
@@ -537,17 +603,14 @@ index a2fc1c6..fadce24 100644
 +    };
 +    if (const ListValue* devices = media->FindList("devices")) {
 +      parse_devices(*devices, &profile->media_devices_);
-+    }
-+    if (const ListValue* spares = media->FindList("spare_devices")) {
-+      parse_devices(*spares, &profile->media_spare_devices_);
      }
    }
  
 diff --git a/base/apostate/profile.h b/base/apostate/profile.h
-index fa36c44..a6d6e33 100644
+index fa36c44..94b17ab 100644
 --- a/base/apostate/profile.h
 +++ b/base/apostate/profile.h
-@@ -415,21 +415,46 @@ class BASE_EXPORT Profile {
+@@ -415,17 +415,33 @@ class BASE_EXPORT Profile {
    //
    // `group` is a pairing key rather than a groupId: entries sharing it are one
    // physical device, and the emitter gives them the same per-origin groupId.
@@ -586,29 +649,8 @@ index fa36c44..a6d6e33 100644
    const std::vector<MediaDevice>& media_devices() const {
      return media_devices_;
    }
- 
-+  // At most one device per kind, listed only when the claimed machine has no
-+  // device of that kind and the host has one. A persona with no microphone on
-+  // a host with one would otherwise hide the host's microphone and break
-+  // every call; this is the device the persona shows instead, named from its
-+  // own machine class rather than from the host.
-+  const std::vector<MediaDevice>& media_spare_devices() const {
-+    return media_spare_devices_;
-+  }
-+
-   // navigator.keyboard.getLayoutMap(), replayed from the capture.
-   //
-   // This is a user setting rather than a device property — the same Mac gives a
-@@ -811,6 +836,7 @@ class BASE_EXPORT Profile {
-   std::optional<int> media_audiooutput_count_;
-   std::optional<int> media_videoinput_count_;
-   std::vector<MediaDevice> media_devices_;
-+  std::vector<MediaDevice> media_spare_devices_;
-   std::map<std::string, std::string> keyboard_layout_map_;
-   std::map<std::string, int64_t> gl_limits_;
-   std::map<std::string, double> gl_limits_fractional_;
 diff --git a/base/apostate/profile_unittest.cc b/base/apostate/profile_unittest.cc
-index 4addbc2..8a67900 100644
+index 4addbc2..f2f6a56 100644
 --- a/base/apostate/profile_unittest.cc
 +++ b/base/apostate/profile_unittest.cc
 @@ -5,10 +5,12 @@
@@ -624,7 +666,7 @@ index 4addbc2..8a67900 100644
  #include "base/base64.h"
  #include "base/base_switches.h"
  #include "base/command_line.h"
-@@ -555,5 +557,140 @@ TEST(ApostateProxyCredentialsTest, AdoptionEmptiesASuppliedEnvelope) {
+@@ -555,5 +557,133 @@ TEST(ApostateProxyCredentialsTest, AdoptionEmptiesASuppliedEnvelope) {
    Profile::AdoptLaunchProxyCredentials();
  }
  
@@ -740,21 +782,14 @@ index 4addbc2..8a67900 100644
 +  EXPECT_EQ(720, camera.max_height);
 +}
 +
-+TEST_F(ApostatePersonaDevicesTest, ASpareDeviceKeepsTheHostsUsable) {
++TEST_F(ApostatePersonaDevicesTest, AKindTheMachineLacksStaysHidden) {
 +  Use(R"({"media":{"audioinput_count":0,"audiooutput_count":1,)"
 +      R"("videoinput_count":0,"devices":[)"
-+      R"({"kind":"audiooutput","label":"Mac mini Speakers","group":"b"}],)"
-+      R"("spare_devices":[)"
-+      R"({"kind":"videoinput","label":"FaceTime HD Camera","group":"c"}]}})");
-+  EXPECT_TRUE(PersonaDevices(MediaDeviceKind::kVideoInput, 0).empty());
-+  const std::vector<PersonaMediaDevice> cameras =
-+      PersonaDevices(MediaDeviceKind::kVideoInput, 2);
-+  ASSERT_EQ(1u, cameras.size());
-+  EXPECT_EQ("FaceTime HD Camera", cameras[0].label);
-+  EXPECT_EQ(MediaDeviceRoute::kHostDevice, cameras[0].route);
-+  // No spare microphone is named, so the host's stays hidden.
-+  EXPECT_TRUE(PersonaDevices(MediaDeviceKind::kAudioInput, 1).empty());
++      R"({"kind":"audiooutput","label":"Mac mini Speakers","group":"b"}]}})");
 +  EXPECT_TRUE(PersonaOwnsDevices(MediaDeviceKind::kAudioInput));
++  EXPECT_TRUE(PersonaDevices(MediaDeviceKind::kAudioInput, 2).empty());
++  EXPECT_TRUE(PersonaDevices(MediaDeviceKind::kVideoInput, 1).empty());
++  EXPECT_FALSE(ResolveRoute("apostate-videoinput-0", 1));
 +}
 +
 +TEST_F(ApostatePersonaDevicesTest, WithoutACountTheHostListStands) {

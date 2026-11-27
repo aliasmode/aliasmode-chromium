@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Write resources/profiles/dispersion/media_topology.json from a device model.
+"""Write resources/profiles/dispersion/media_topology_v2.json from a device model.
+
+The compositor draws this table instead of media_topology.json only under
+--fingerprint-media-catalogue=2, so a seed composed without the switch keeps
+the devices it always had. media_topology.json is not touched.
 
 The model is the one AliasMode Firefox draws its media devices from
 (`firefox-data/media-devices.json` in the app, taken from the Camoufox
@@ -29,9 +33,6 @@ every option says so. What the derivation adds:
   * **Size classes and facing.** What an open camera reports: its largest
     frame size (`formats`) and, for a Windows built-in camera, the front panel
     that Windows reports as facingMode "user".
-  * **Spare devices.** For each kind the class's first device in option
-    order, listed only when the drawn machine has none of that kind and the
-    host has one (patch 0177).
   * **One peripheral at most.** The model adds a headset, a display and a
     webcam independently. An option here holds at most one of them, weighted
     by the probability of exactly that one; machines with two or more are
@@ -53,7 +54,10 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "resources" / "profiles" / "dispersion" / "media_topology.json"
+DISPERSION = ROOT / "resources" / "profiles" / "dispersion"
+OUT = DISPERSION / "media_topology_v2.json"
+# The table whose machine classes, conditioning and shape this one follows.
+BASE = DISPERSION / "media_topology.json"
 
 # Share of machines with no microphone, from the same model
 # (firefoxMediaDevices in the app). It applies to desktops: a laptop has a
@@ -258,25 +262,16 @@ def order(devices: list[dict]) -> list[dict]:
     return sorted(devices, key=lambda device: rank[device["kind"]])
 
 
-def option_value(devices: list[dict], spares: list[dict]) -> dict:
+def option_value(devices: list[dict]) -> dict:
     media = {f"{kind}_count": sum(1 for device in devices if device["kind"] == kind)
              for kind in ("audioinput", "audiooutput", "videoinput")}
     media["devices"] = devices
-    missing = [spare for spare in spares if media[f"{spare['kind']}_count"] == 0]
-    if missing:
-        media["spare_devices"] = missing
     return {"media": media}
 
 
-def build(model: dict, previous: dict) -> dict:
+def build(model: dict, base: dict) -> dict:
     option_sets = []
     for machine_class in CLASSES:
-        options = class_options(machine_class, model)
-        spares = []
-        for kind in ("audioinput", "audiooutput", "videoinput"):
-            first = next((device for option in options for device in option["devices"] if device["kind"] == kind), None)
-            if first:
-                spares.append(dict(first))
         option_sets.append({
             "key": {"machine_class": machine_class},
             "options": [{
@@ -284,20 +279,20 @@ def build(model: dict, previous: dict) -> dict:
                 "id": option["id"],
                 "note": NOTE,
                 "source": SOURCE,
-                "value": option_value(option["devices"], spares),
+                "value": option_value(option["devices"]),
                 "weight": option["weight"],
-            } for option in options],
+            } for option in class_options(machine_class, model)],
         })
-    # Classes this script does not model keep their option sets as they are.
-    for option_set in previous["option_sets"]:
+    # Classes this script does not model keep the base table's option sets.
+    for option_set in base["option_sets"]:
         if option_set["key"]["machine_class"] not in CLASSES:
             option_sets.append(option_set)
-    table = dict(previous)
+    table = dict(base)
+    table["axis"] = table["label"] = "media_topology_v2"
     table["option_sets"] = option_sets
     table["description"] = (
-        "enumerateDevices counts and labels, conditioned on the machine class. The labels name "
-        "the machine, so they follow the machine class rather than the platform persona. The "
-        "persona's list replaces the host's (patch 0177). Written by "
+        "enumerateDevices counts and labels, conditioned on the machine class, drawn instead of "
+        "media_topology under --fingerprint-media-catalogue=2. Written by "
         "scripts/generate-media-topology.py from the device model AliasMode Firefox uses; derived, "
         "not measured on Chrome."
     )
@@ -310,8 +305,7 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=OUT)
     args = parser.parse_args()
     model = json.loads(args.model.read_text(encoding="utf-8"))
-    previous = json.loads(args.out.read_text(encoding="utf-8"))
-    table = build(model, previous)
+    table = build(model, json.loads(BASE.read_text(encoding="utf-8")))
     args.out.write_text(json.dumps(table, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n", encoding="utf-8")
     counts = {option_set["key"]["machine_class"]: len(option_set["options"]) for option_set in table["option_sets"]}
     print(f"generate-media-topology: {sum(counts.values())} options: {counts}")
