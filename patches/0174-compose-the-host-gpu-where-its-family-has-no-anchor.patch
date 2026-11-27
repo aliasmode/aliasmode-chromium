@@ -127,7 +127,7 @@ index 77398f9..4b0be64 100644
    // application locale resolves ahead of it; the composition only reports it
    // when it disagrees with that locale.
 diff --git a/base/apostate/compose_unittest.cc b/base/apostate/compose_unittest.cc
-index 42160c2..d5a9eae 100644
+index 42160c2..0d81126 100644
 --- a/base/apostate/compose_unittest.cc
 +++ b/base/apostate/compose_unittest.cc
 @@ -12,6 +12,7 @@
@@ -138,7 +138,7 @@ index 42160c2..d5a9eae 100644
  #include <vector>
  
  #include "base/apostate/dispersion_table.h"
-@@ -852,6 +853,87 @@ TEST(ApostateComposeTest, TheAnchorFollowsTheHostCpuFamily) {
+@@ -852,6 +853,88 @@ TEST(ApostateComposeTest, TheAnchorFollowsTheHostCpuFamily) {
    EXPECT_EQ("test-other-cpu", ChosenId(*composition, "anchor"));
  }
  
@@ -168,7 +168,8 @@ index 42160c2..d5a9eae 100644
 +    expected.Remove(section);
 +  }
 +  EXPECT_EQ(WriteJsonWithOptions(
-+                expected, JSONWriter::OPTIONS_OMIT_DOUBLE_TYPE_PRESERVATION),
++                expected, JSONWriter::OPTIONS_OMIT_DOUBLE_TYPE_PRESERVATION)
++                .value_or("<unserialisable>"),
 +            ProfileJson(*host_gpu));
 +}
 +
