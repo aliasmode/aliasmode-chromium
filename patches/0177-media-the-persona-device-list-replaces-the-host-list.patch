@@ -66,11 +66,11 @@ index 21c92e7..1d815cf 100644
    request.overrides = std::move(overrides);
  
 diff --git a/base/apostate/compose.h b/base/apostate/compose.h
-index 4b0be64..8569bc7 100644
+index bd4bd49..5b233d5 100644
 --- a/base/apostate/compose.h
 +++ b/base/apostate/compose.h
-@@ -93,6 +93,14 @@ inline constexpr char kFingerprintAnchor[] = "fingerprint-anchor";
- // another vendor's. A macOS persona on an Intel Mac gets it without asking.
+@@ -95,6 +95,14 @@ inline constexpr char kFingerprintAnchor[] = "fingerprint-anchor";
+ // Intel Mac with it also claims x86.
  inline constexpr char kFingerprintGpuHost[] = "fingerprint-gpu-host";
  
 +// Draw the media devices from the second device catalogue,
@@ -84,7 +84,7 @@ index 4b0be64..8569bc7 100644
  // Write the composition report to stdout and exit.
  inline constexpr char kFingerprintExplain[] = "fingerprint-explain";
  
-@@ -277,6 +285,9 @@ struct BASE_EXPORT ComposeRequest {
+@@ -279,6 +287,9 @@ struct BASE_EXPORT ComposeRequest {
    std::string pinned_anchor;
    // --fingerprint-gpu-host: the GPU surfaces are the host's own.
    bool gpu_host = false;
