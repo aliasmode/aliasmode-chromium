@@ -278,7 +278,7 @@ index c9f34ea2c7..315f15eb20 100644
 +  // Unassigned, common and inherited characters carry no script to look up.
 +  // Recover the same way font_fallback_win.cc's GetScript() does.
 +  if (script <= USCRIPT_INHERITED) {
-+    script = Character::GetScriptBasedOnUnicodeBlock(character);
++    script = unicode::GetScriptBasedOnUnicodeBlock(character);
 +  }
 +  if (script == USCRIPT_HAN) {
 +    script = HanScriptForDescription(description);
