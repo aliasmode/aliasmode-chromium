@@ -98,6 +98,7 @@ const FINGERPRINT_SWITCHES = {
   "--fingerprint-anchor": true,
   "--fingerprint-device-memory": true,
   "--fingerprint-explain": true,
+  "--fingerprint-geolocation": true,
   "--fingerprint-gpu-host": true,
   "--fingerprint-gpu-renderer": true,
   "--fingerprint-gpu-vendor": true,

@@ -1,0 +1,507 @@
+Subject: [PATCH] geolocation: a switch serves the profile location
+
+--fingerprint-geolocation=<lat>,<lon>[,<accuracy_m>] makes
+navigator.geolocation answer with the given position, so a page that
+holds the geolocation permission reads the profile's location and not
+the host's. A fixed location provider is then the only provider: no
+platform provider (CoreLocation, WinRT, the Linux portal) and no network
+provider is ever created, so no Wi-Fi scan and no request to a location
+service leaves the machine. On Windows and macOS the system location
+source reports the permission as allowed and never touches the
+operating system's location settings or services.
+
+The site permission prompt stays as it is. After the page is granted,
+the first fix arrives 400 to 1200 ms later, as from a real provider,
+with the current time as its timestamp. Altitude, altitude accuracy,
+heading and speed stay unset, so a page reads them as null. The
+accuracy defaults to 50 metres. watchPosition gets the one fix, as from
+a device that does not move. A value that does not parse, or is out of
+range, gives POSITION_UNAVAILABLE and never the host's location.
+
+Without the switch nothing changes.
+
+diff --git a/chrome/browser/browser_process_platform_part_mac.mm b/chrome/browser/browser_process_platform_part_mac.mm
+index 5587cf6..7d5ca9e 100644
+--- a/chrome/browser/browser_process_platform_part_mac.mm
++++ b/chrome/browser/browser_process_platform_part_mac.mm
+@@ -4,6 +4,9 @@
+ 
+ #include "chrome/browser/browser_process_platform_part_mac.h"
+ 
++#include <memory>
++#include <utility>
++
+ #include "base/apple/foundation_util.h"
+ #include "base/time/time.h"
+ #import "chrome/browser/app_controller_mac.h"
+@@ -13,6 +16,7 @@
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/chrome_browser_application_mac.h"
+ #include "chrome/browser/lifetime/application_lifetime_desktop.h"
++#include "services/device/public/cpp/geolocation/allowed_system_geolocation_source.h"
+ #include "services/device/public/cpp/geolocation/system_geolocation_source_apple.h"
+ 
+ BrowserProcessPlatformPart::BrowserProcessPlatformPart() = default;
+@@ -70,9 +74,17 @@ void BrowserProcessPlatformPart::PreMainMessageLoopRun() {
+   // Workaround for https://crbug.com/40155239: This needs to be created at
+   // browser startup.
+   if (!device::GeolocationSystemPermissionManager::GetInstance()) {
+-    device::GeolocationSystemPermissionManager::SetInstance(
+-        device::SystemGeolocationSourceApple::
+-            CreateGeolocationSystemPermissionManager());
++    // AliasMode: with --fingerprint-geolocation the position comes from the
++    // switch, so the system permission is allowed and the operating system's
++    // location services are never asked.
++    std::unique_ptr<device::GeolocationSystemPermissionManager> manager =
++        device::AllowedSystemGeolocationSource::
++            MaybeCreateGeolocationSystemPermissionManager();
++    if (!manager) {
++      manager = device::SystemGeolocationSourceApple::
++          CreateGeolocationSystemPermissionManager();
++    }
++    device::GeolocationSystemPermissionManager::SetInstance(std::move(manager));
+   }
+ }
+ 
+diff --git a/chrome/browser/chrome_browser_main_win.cc b/chrome/browser/chrome_browser_main_win.cc
+index 04619a6..bf13d90 100644
+--- a/chrome/browser/chrome_browser_main_win.cc
++++ b/chrome/browser/chrome_browser_main_win.cc
+@@ -13,6 +13,7 @@
+ #include <stdint.h>
+ 
+ #include <algorithm>
++#include <memory>
+ #include <optional>
+ #include <string_view>
+ #include <utility>
+@@ -122,6 +123,7 @@
+ #include "sandbox/policy/switches.h"
+ #include "sandbox/win/src/sandbox.h"
+ #include "sandbox/win/src/sandbox_factory.h"
++#include "services/device/public/cpp/geolocation/allowed_system_geolocation_source.h"
+ #include "services/device/public/cpp/geolocation/geolocation_system_permission_manager.h"
+ #include "services/device/public/cpp/geolocation/system_geolocation_source_win.h"
+ #include "ui/base/l10n/l10n_util.h"
+@@ -751,9 +753,17 @@ void ChromeBrowserMainPartsWin::PreProfileInit() {
+   SetupModuleDatabase(&module_watcher_);
+ 
+   if (!device::GeolocationSystemPermissionManager::GetInstance()) {
+-    device::GeolocationSystemPermissionManager::SetInstance(
+-        device::SystemGeolocationSourceWin::
+-            CreateGeolocationSystemPermissionManager());
++    // AliasMode: with --fingerprint-geolocation the position comes from the
++    // switch, so the system permission is allowed and the operating system's
++    // location services are never asked.
++    std::unique_ptr<device::GeolocationSystemPermissionManager> manager =
++        device::AllowedSystemGeolocationSource::
++            MaybeCreateGeolocationSystemPermissionManager();
++    if (!manager) {
++      manager = device::SystemGeolocationSourceWin::
++          CreateGeolocationSystemPermissionManager();
++    }
++    device::GeolocationSystemPermissionManager::SetInstance(std::move(manager));
+   }
+ }
+ 
+diff --git a/services/device/geolocation/BUILD.gn b/services/device/geolocation/BUILD.gn
+index 728b970..1511474 100644
+--- a/services/device/geolocation/BUILD.gn
++++ b/services/device/geolocation/BUILD.gn
+@@ -17,6 +17,8 @@ source_set("geolocation") {
+   ]
+ 
+   sources = [
++    "fixed_location_provider.cc",
++    "fixed_location_provider.h",
+     "geolocation_context.cc",
+     "geolocation_context.h",
+     "geolocation_impl.cc",
+diff --git a/services/device/geolocation/fixed_location_provider.cc b/services/device/geolocation/fixed_location_provider.cc
+new file mode 100644
+index 0000000..bb5a292
+--- /dev/null
++++ b/services/device/geolocation/fixed_location_provider.cc
+@@ -0,0 +1,135 @@
++// Copyright 2026 The AliasMode Authors
++// Use of this source code is governed by a GPL-3.0 license that can be
++// found in the LICENSE file.
++
++#include "services/device/geolocation/fixed_location_provider.h"
++
++#include <cmath>
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "base/command_line.h"
++#include "base/location.h"
++#include "base/rand_util.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_split.h"
++#include "base/time/time.h"
++
++namespace device {
++
++namespace {
++
++constexpr char kFingerprintGeolocation[] = "fingerprint-geolocation";
++
++// The accuracy, in metres, of a value that names none: a Wi-Fi fix.
++constexpr double kDefaultAccuracyMeters = 50;
++
++// How long a first fix takes after the provider is started and granted. A
++// fix at once would be faster than any provider a real device has.
++constexpr base::TimeDelta kFirstFixMin = base::Milliseconds(400);
++constexpr base::TimeDelta kFirstFixMax = base::Milliseconds(1200);
++
++}  // namespace
++
++// static
++std::unique_ptr<LocationProvider> FixedLocationProvider::CreateIfRequested() {
++  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
++          kFingerprintGeolocation)) {
++    return nullptr;
++  }
++  return std::make_unique<FixedLocationProvider>();
++}
++
++// static
++std::optional<FixedLocationProvider::Fix> FixedLocationProvider::ParseSwitch() {
++  const std::string value =
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          kFingerprintGeolocation);
++  const std::vector<std::string_view> parts = base::SplitStringPiece(
++      value, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
++  if (parts.size() != 2 && parts.size() != 3) {
++    return std::nullopt;
++  }
++  Fix fix = {0, 0, kDefaultAccuracyMeters};
++  if (!base::StringToDouble(parts[0], &fix.latitude) ||
++      !base::StringToDouble(parts[1], &fix.longitude) ||
++      (parts.size() == 3 && !base::StringToDouble(parts[2], &fix.accuracy))) {
++    return std::nullopt;
++  }
++  if (!std::isfinite(fix.latitude) || !std::isfinite(fix.longitude) ||
++      !std::isfinite(fix.accuracy) || fix.latitude < -90 || fix.latitude > 90 ||
++      fix.longitude < -180 || fix.longitude > 180 || fix.accuracy < 0) {
++    return std::nullopt;
++  }
++  return fix;
++}
++
++FixedLocationProvider::FixedLocationProvider() : fix_(ParseSwitch()) {}
++
++FixedLocationProvider::~FixedLocationProvider() = default;
++
++void FixedLocationProvider::FillDiagnostics(
++    mojom::GeolocationDiagnostics& diagnostics) {
++  diagnostics.provider_state = state_;
++}
++
++void FixedLocationProvider::SetUpdateCallback(
++    const LocationProviderUpdateCallback& callback) {
++  callback_ = callback;
++}
++
++void FixedLocationProvider::StartProvider(bool high_accuracy) {
++  state_ = high_accuracy
++               ? mojom::GeolocationDiagnostics::ProviderState::kHighAccuracy
++               : mojom::GeolocationDiagnostics::ProviderState::kLowAccuracy;
++  MaybeScheduleFix();
++}
++
++void FixedLocationProvider::StopProvider() {
++  state_ = mojom::GeolocationDiagnostics::ProviderState::kStopped;
++  first_fix_timer_.Stop();
++}
++
++const mojom::GeopositionResult* FixedLocationProvider::GetPosition() {
++  return result_.get();
++}
++
++void FixedLocationProvider::OnPermissionGranted() {
++  is_permission_granted_ = true;
++  MaybeScheduleFix();
++}
++
++void FixedLocationProvider::MaybeScheduleFix() {
++  // A stationary device reports one fix; a later start, such as a change of
++  // accuracy, keeps it.
++  if (state_ == mojom::GeolocationDiagnostics::ProviderState::kStopped ||
++      !is_permission_granted_ || result_ || first_fix_timer_.IsRunning()) {
++    return;
++  }
++  first_fix_timer_.Start(FROM_HERE,
++                         base::RandTimeDelta(kFirstFixMin, kFirstFixMax), this,
++                         &FixedLocationProvider::ReportFix);
++}
++
++void FixedLocationProvider::ReportFix() {
++  if (fix_) {
++    // Altitude, altitude accuracy, heading and speed keep their unset
++    // sentinels, which a page reads as null.
++    auto position = mojom::Geoposition::New();
++    position->latitude = fix_->latitude;
++    position->longitude = fix_->longitude;
++    position->accuracy = fix_->accuracy;
++    position->timestamp = base::Time::Now();
++    result_ = mojom::GeopositionResult::NewPosition(std::move(position));
++  } else {
++    result_ = mojom::GeopositionResult::NewError(mojom::GeopositionError::New(
++        mojom::GeopositionErrorCode::kPositionUnavailable,
++        mojom::kGeoPositionUnavailableErrorMessage, ""));
++  }
++  if (callback_) {
++    callback_.Run(this, result_.Clone());
++  }
++}
++
++}  // namespace device
+diff --git a/services/device/geolocation/fixed_location_provider.h b/services/device/geolocation/fixed_location_provider.h
+new file mode 100644
+index 0000000..048ab0a
+--- /dev/null
++++ b/services/device/geolocation/fixed_location_provider.h
+@@ -0,0 +1,68 @@
++// Copyright 2026 The AliasMode Authors
++// Use of this source code is governed by a GPL-3.0 license that can be
++// found in the LICENSE file.
++
++#ifndef SERVICES_DEVICE_GEOLOCATION_FIXED_LOCATION_PROVIDER_H_
++#define SERVICES_DEVICE_GEOLOCATION_FIXED_LOCATION_PROVIDER_H_
++
++#include <memory>
++#include <optional>
++
++#include "base/timer/timer.h"
++#include "services/device/public/cpp/geolocation/location_provider.h"
++#include "services/device/public/mojom/geolocation_internals.mojom.h"
++#include "services/device/public/mojom/geoposition.mojom.h"
++
++namespace device {
++
++// AliasMode: serves the position --fingerprint-geolocation=<lat>,<lon>[,<m>]
++// names, as a stationary device would report it, and never asks the host or
++// the network where it is. One fix per start, 400 to 1200 ms after the
++// provider is both started and granted; altitude, heading and speed stay
++// unset. A value that does not parse, or is out of range, yields
++// POSITION_UNAVAILABLE rather than the host's location.
++class FixedLocationProvider : public LocationProvider {
++ public:
++  // A provider when the switch is present, whatever its value, else nullptr.
++  static std::unique_ptr<LocationProvider> CreateIfRequested();
++
++  FixedLocationProvider();
++  FixedLocationProvider(const FixedLocationProvider&) = delete;
++  FixedLocationProvider& operator=(const FixedLocationProvider&) = delete;
++  ~FixedLocationProvider() override;
++
++  // LocationProvider implementation.
++  void FillDiagnostics(mojom::GeolocationDiagnostics& diagnostics) override;
++  void SetUpdateCallback(
++      const LocationProviderUpdateCallback& callback) override;
++  void StartProvider(bool high_accuracy) override;
++  void StopProvider() override;
++  const mojom::GeopositionResult* GetPosition() override;
++  void OnPermissionGranted() override;
++
++ private:
++  struct Fix {
++    double latitude;
++    double longitude;
++    double accuracy;
++  };
++
++  static std::optional<Fix> ParseSwitch();
++
++  void MaybeScheduleFix();
++  void ReportFix();
++
++  // Unset when the switch value is malformed or out of range.
++  const std::optional<Fix> fix_;
++
++  LocationProviderUpdateCallback callback_;
++  mojom::GeolocationDiagnostics::ProviderState state_ =
++      mojom::GeolocationDiagnostics::ProviderState::kStopped;
++  bool is_permission_granted_ = false;
++  mojom::GeopositionResultPtr result_;
++  base::OneShotTimer first_fix_timer_;
++};
++
++}  // namespace device
++
++#endif  // SERVICES_DEVICE_GEOLOCATION_FIXED_LOCATION_PROVIDER_H_
+diff --git a/services/device/geolocation/location_provider_manager.cc b/services/device/geolocation/location_provider_manager.cc
+index fc299cb..df8942e 100644
+--- a/services/device/geolocation/location_provider_manager.cc
++++ b/services/device/geolocation/location_provider_manager.cc
+@@ -18,6 +18,7 @@
+ #include "build/build_config.h"
+ #include "build/config/linux/dbus/buildflags.h"
+ #include "components/device_event_log/device_event_log.h"
++#include "services/device/geolocation/fixed_location_provider.h"
+ #include "services/device/geolocation/network_location_provider.h"
+ #include "services/device/geolocation/wifi_polling_policy.h"
+ #include "services/device/public/cpp/device_features.h"
+@@ -204,9 +205,17 @@ bool LocationProviderManager::InitializeProvider() {
+     return true;
+   }
+ 
++  // AliasMode: with --fingerprint-geolocation the fixed provider is the only
++  // one, so no platform or network provider is ever created and the host's
++  // location services are never asked.
++  custom_location_provider_ = FixedLocationProvider::CreateIfRequested();
++  if (custom_location_provider_) {
++    provider_manager_mode_ = kCustomOnly;
++  }
++
+   // If a custom location provider is injected and available, override the mode
+   // to use the custom provider exclusively.
+-  if (custom_location_provider_getter_) {
++  if (!custom_location_provider_ && custom_location_provider_getter_) {
+     custom_location_provider_ = custom_location_provider_getter_.Run();
+     if (custom_location_provider_) {
+       provider_manager_mode_ = kCustomOnly;
+diff --git a/services/device/public/cpp/geolocation/BUILD.gn b/services/device/public/cpp/geolocation/BUILD.gn
+index 5a357d9..1686559 100644
+--- a/services/device/public/cpp/geolocation/BUILD.gn
++++ b/services/device/public/cpp/geolocation/BUILD.gn
+@@ -25,7 +25,11 @@ component("geolocation") {
+   deps = [ "//components/device_event_log" ]
+ 
+   if (os_level_geolocation_permission_supported) {
+-    sources += [ "system_geolocation_source.h" ]
++    sources += [
++      "allowed_system_geolocation_source.cc",
++      "allowed_system_geolocation_source.h",
++      "system_geolocation_source.h",
++    ]
+   }
+   if (is_apple) {
+     sources += [
+diff --git a/services/device/public/cpp/geolocation/allowed_system_geolocation_source.cc b/services/device/public/cpp/geolocation/allowed_system_geolocation_source.cc
+new file mode 100644
+index 0000000..1e4fca9
+--- /dev/null
++++ b/services/device/public/cpp/geolocation/allowed_system_geolocation_source.cc
+@@ -0,0 +1,61 @@
++// Copyright 2026 The AliasMode Authors
++// Use of this source code is governed by a GPL-3.0 license that can be
++// found in the LICENSE file.
++
++#include "services/device/public/cpp/geolocation/allowed_system_geolocation_source.h"
++
++#include <utility>
++
++#include "base/command_line.h"
++#include "services/device/public/cpp/geolocation/location_system_permission_status.h"
++
++namespace device {
++
++namespace {
++
++// Read by the fixed location provider in services/device/geolocation.
++constexpr char kFingerprintGeolocation[] = "fingerprint-geolocation";
++
++}  // namespace
++
++// static
++std::unique_ptr<GeolocationSystemPermissionManager>
++AllowedSystemGeolocationSource::
++    MaybeCreateGeolocationSystemPermissionManager() {
++  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
++          kFingerprintGeolocation)) {
++    return nullptr;
++  }
++  return std::make_unique<GeolocationSystemPermissionManager>(
++      std::make_unique<AllowedSystemGeolocationSource>());
++}
++
++AllowedSystemGeolocationSource::AllowedSystemGeolocationSource() = default;
++
++AllowedSystemGeolocationSource::~AllowedSystemGeolocationSource() = default;
++
++void AllowedSystemGeolocationSource::RegisterPermissionUpdateCallback(
++    PermissionUpdateCallback callback) {
++  // The status never changes, so the callback is run once and not kept.
++  std::move(callback).Run(LocationSystemPermissionStatus::kAllowed);
++}
++
++#if BUILDFLAG(IS_APPLE)
++// Positions come from the fixed provider, never from this source.
++void AllowedSystemGeolocationSource::AddPositionUpdateObserver(
++    PositionObserver* observer) {}
++
++void AllowedSystemGeolocationSource::RemovePositionUpdateObserver(
++    PositionObserver* observer) {}
++
++void AllowedSystemGeolocationSource::StartWatchingPosition(bool high_accuracy) {
++}
++
++void AllowedSystemGeolocationSource::StopWatchingPosition() {}
++#endif  // BUILDFLAG(IS_APPLE)
++
++#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN)
++void AllowedSystemGeolocationSource::RequestPermission() {}
++#endif
++
++}  // namespace device
+diff --git a/services/device/public/cpp/geolocation/allowed_system_geolocation_source.h b/services/device/public/cpp/geolocation/allowed_system_geolocation_source.h
+new file mode 100644
+index 0000000..e832206
+--- /dev/null
++++ b/services/device/public/cpp/geolocation/allowed_system_geolocation_source.h
+@@ -0,0 +1,52 @@
++// Copyright 2026 The AliasMode Authors
++// Use of this source code is governed by a GPL-3.0 license that can be
++// found in the LICENSE file.
++
++#ifndef SERVICES_DEVICE_PUBLIC_CPP_GEOLOCATION_ALLOWED_SYSTEM_GEOLOCATION_SOURCE_H_
++#define SERVICES_DEVICE_PUBLIC_CPP_GEOLOCATION_ALLOWED_SYSTEM_GEOLOCATION_SOURCE_H_
++
++#include <memory>
++
++#include "base/component_export.h"
++#include "build/build_config.h"
++#include "services/device/public/cpp/geolocation/geolocation_system_permission_manager.h"
++#include "services/device/public/cpp/geolocation/system_geolocation_source.h"
++
++namespace device {
++
++// AliasMode: the system source of a launch with --fingerprint-geolocation.
++// Its position comes from the switch, so the operating system's location
++// permission is reported as allowed and its location settings and services
++// (CLLocationManager, WinRT Geolocator) are never touched. The site
++// permission prompt is unchanged.
++class COMPONENT_EXPORT(GEOLOCATION) AllowedSystemGeolocationSource
++    : public SystemGeolocationSource {
++ public:
++  // A manager over this source when the switch is present, else nullptr.
++  static std::unique_ptr<GeolocationSystemPermissionManager>
++  MaybeCreateGeolocationSystemPermissionManager();
++
++  AllowedSystemGeolocationSource();
++  AllowedSystemGeolocationSource(const AllowedSystemGeolocationSource&) =
++      delete;
++  AllowedSystemGeolocationSource& operator=(
++      const AllowedSystemGeolocationSource&) = delete;
++  ~AllowedSystemGeolocationSource() override;
++
++  // SystemGeolocationSource implementation:
++  void RegisterPermissionUpdateCallback(
++      PermissionUpdateCallback callback) override;
++#if BUILDFLAG(IS_APPLE)
++  void AddPositionUpdateObserver(PositionObserver* observer) override;
++  void RemovePositionUpdateObserver(PositionObserver* observer) override;
++  void StartWatchingPosition(bool high_accuracy) override;
++  void StopWatchingPosition() override;
++#endif
++#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN)
++  void RequestPermission() override;
++#endif
++};
++
++}  // namespace device
++
++#endif  // SERVICES_DEVICE_PUBLIC_CPP_GEOLOCATION_ALLOWED_SYSTEM_GEOLOCATION_SOURCE_H_

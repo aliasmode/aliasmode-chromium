@@ -27,6 +27,7 @@ When the browser refuses a value, it prints `apostate: <reason>` on stderr and e
 | [`--fingerprint-webrtc-ip`](#fingerprint-webrtc-ip) | IP address | the real candidate address |
 | [`--fingerprint-webrtc-udp`](#fingerprint-webrtc-udp) | `direct`, `block` | follows the proxy |
 | [`--fingerprint-noise`](#fingerprint-noise) | none | off |
+| [`--fingerprint-geolocation`](#fingerprint-geolocation) | latitude, longitude and accuracy | stock geolocation |
 | [`--apostate-profile`](#apostate-profile) | base64-encoded profile JSON | none |
 | [`--aliasmode-window-label`](#aliasmode-window-label) | text | none |
 | [`--aliasmode-keep-alive`](#aliasmode-keep-alive) | none | off |
@@ -257,6 +258,19 @@ Makes profiles on one host differ where they would otherwise be identical. Every
 - **Default.** Off. It does nothing in host mode.
 - **Value.** None. The browser checks only whether the switch is present, so `--fingerprint-noise=false` turns noise on. The Python and Node packages refuse `false`, `0`, `no`, `off`, `disable` and `disabled` as its value.
 - A page can detect the change, for example by drawing one image at two scales and comparing them. Leave it off unless canvas hashes must differ between personas on one host.
+
+## Geolocation
+
+### `--fingerprint-geolocation`
+
+The position `navigator.geolocation` gives a page that has the geolocation permission, in place of the host's position.
+
+- **Value.** `LATITUDE,LONGITUDE` or `LATITUDE,LONGITUDE,ACCURACY`, in decimal degrees and metres, such as `--fingerprint-geolocation=48.85837,2.294481,35`. The accuracy is 50 metres when you give none.
+- **Default.** Off. Without the switch, geolocation works as in stock Chrome.
+- The page still asks for the permission, and the user or the automation answers the prompt as in stock Chrome. The switch grants nothing.
+- The first position comes 400 to 1200 ms after the permission is granted, with the current time as its timestamp. `altitude`, `altitudeAccuracy`, `heading` and `speed` are `null`. `watchPosition` gets this one position, as from a device that does not move.
+- The browser never asks the host or a network location service where it is. On Windows and macOS it does not read or change the operating system's location settings, so the system location permission does not matter.
+- A value that does not parse, a latitude outside -90 to 90, a longitude outside -180 to 180 or a negative accuracy gives the page error code 2 (`POSITION_UNAVAILABLE`) and never the host's position.
 
 ## A profile you wrote
 

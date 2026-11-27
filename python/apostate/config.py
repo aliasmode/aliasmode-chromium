@@ -119,6 +119,7 @@ FINGERPRINT_SWITCHES = frozenset({
     "--fingerprint-anchor",
     "--fingerprint-device-memory",
     "--fingerprint-explain",
+    "--fingerprint-geolocation",
     "--fingerprint-gpu-host",
     "--fingerprint-gpu-renderer",
     "--fingerprint-gpu-vendor",

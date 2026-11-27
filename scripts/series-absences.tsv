@@ -47,6 +47,11 @@ third_party/angle/src/tests/apostate_large_index_tests_main.cpp	windows-*,macos-
 third_party/angle/src/tests/apostate_parallel_shader_tests_main.cpp	windows-*,macos-*	platform	patches/0057-angle-static-parallel-shader-tests.patch declares the angle_test under `if (is_linux && angle_enable_vulkan && angle_has_rapidjson)`
 third_party/angle/src/tests/gl_tests/ApostateLargeElementIndexTest.cpp	windows-*,macos-*	platform	patches/0063-validated-software-element-indices.patch declares the angle_test under `if (is_linux && angle_enable_vulkan && angle_has_rapidjson)`
 
+# ------------------------------------------------------------- chrome, device
+chrome/browser/browser_process_platform_part_mac.mm	windows-*,linux-*	platform	chrome/browser/BUILD.gn:1803 adds it under `if (is_mac)` (line 1800)
+chrome/browser/chrome_browser_main_win.cc	linux-*,macos-*	platform	chrome/browser/BUILD.gn:1710 adds it under `if (is_win)` (line 1708)
+services/device/public/cpp/geolocation/allowed_system_geolocation_source.cc	linux-*	platform	patches/0175-geolocation-a-switch-serves-the-profile-location.patch adds it under `if (os_level_geolocation_permission_supported)` in services/device/public/cpp/geolocation/BUILD.gn, which buildflags.gni sets to `is_chromeos || is_apple || is_win`
+
 # ----------------------------------------------------------------------- blink
 third_party/blink/renderer/core/layout/layout_theme_font_provider_default.cc	windows-*	platform	third_party/blink/renderer/core/layout/build.gni:715 adds it in the `else` of `if (is_win)`, which takes layout_theme_font_provider_win.cc instead
 third_party/blink/renderer/core/layout/layout_theme_font_provider_win.cc	linux-*,macos-*	platform	third_party/blink/renderer/core/layout/build.gni:707 adds it under `if (is_win)` (line 705)
