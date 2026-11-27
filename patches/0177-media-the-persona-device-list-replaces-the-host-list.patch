@@ -700,17 +700,17 @@ index 4addbc2..f2f6a56 100644
 +};
 +
 +constexpr char kTwoMicrophonesOneCamera[] =
-+    R"({"media":{"audioinput_count":2,"audiooutput_count":1,)"
-+    R"("videoinput_count":1,"devices":[)"
-+    R"({"kind":"audioinput","label":"Microphone Array (Realtek(R) Audio)",)"
-+    R"("group":"card","audio":{"sample_rate":44100,"channels":2,)"
-+    R"("buffer_frames":441}},)"
-+    R"({"kind":"audioinput","label":"Microphone (HD Pro Webcam C920)",)"
-+    R"("group":"c920"},)"
-+    R"({"kind":"audiooutput","label":"Speakers (Realtek(R) Audio)",)"
-+    R"("group":"card"},)"
-+    R"({"kind":"videoinput","label":"HD Pro Webcam C920 (046d:082d)",)"
-+    R"("group":"c920","facing":"user","formats":"hd"}]}})";
++    R"json({"media":{"audioinput_count":2,"audiooutput_count":1,)json"
++    R"json("videoinput_count":1,"devices":[)json"
++    R"json({"kind":"audioinput","label":"Microphone Array (Realtek(R) Audio)",)json"
++    R"json("group":"card","audio":{"sample_rate":44100,"channels":2,)json"
++    R"json("buffer_frames":441}},)json"
++    R"json({"kind":"audioinput","label":"Microphone (HD Pro Webcam C920)",)json"
++    R"json("group":"c920"},)json"
++    R"json({"kind":"audiooutput","label":"Speakers (Realtek(R) Audio)",)json"
++    R"json("group":"card"},)json"
++    R"json({"kind":"videoinput","label":"HD Pro Webcam C920 (046d:082d)",)json"
++    R"json("group":"c920","facing":"user","formats":"hd"}]}})json";
 +
 +TEST_F(ApostatePersonaDevicesTest, ThePersonaListIsTheSameOnEveryHost) {
 +  Use(kTwoMicrophonesOneCamera);
