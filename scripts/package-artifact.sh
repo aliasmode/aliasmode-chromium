@@ -150,6 +150,21 @@ done <<EOF
 $optional
 EOF
 
+# Strip the staged Linux ELF files, never out/: MANIFEST.lock hashes what ninja
+# built. symbol_level = 0 drops debug info but keeps .symtab, which left 1.6M
+# symbols (every patch's function and switch name) and 245 MB in build 4's
+# chrome. Google's chrome ships with no .symtab either.
+case "$TARGET" in
+  linux-x64|linux-arm64)
+    llvm_strip="$SRC/third_party/llvm-build/Release+Asserts/bin/llvm-strip"
+    while IFS= read -r -d '' elf; do
+      [ "$(head -c 4 "$elf" | od -An -tx1 | tr -d ' \n')" = 7f454c46 ] || continue
+      [ -x "$llvm_strip" ] || die "missing $llvm_strip to strip $elf"
+      "$llvm_strip" --strip-all "$elf"
+    done < <(find "$stage" -type f -print0)
+    ;;
+esac
+
 # The whole `locales` directory, not `locales/en-US.pak`, and the difference is
 # a fingerprint property rather than a packaging preference.
 #

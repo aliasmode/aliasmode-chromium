@@ -64,5 +64,40 @@ class WindowsPackageTests(unittest.TestCase):
         self.assertFalse(self.archive.exists())
 
 
+@unittest.skipUnless(shutil.which("gcc") and shutil.which("strip") and shutil.which("zstd"), "requires gcc, strip and zstd")
+class LinuxPackageTests(unittest.TestCase):
+    def test_linux_payload_is_stripped_and_out_is_not(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary)
+            output = workspace / "src/out/linux-x64"
+            (output / "locales").mkdir(parents=True)
+            for name in [
+                "chrome_crashpad_handler", "icudtl.dat", "resources.pak",
+                "chrome_100_percent.pak", "chrome_200_percent.pak", "v8_context_snapshot.bin",
+                "locales/en-US.pak", "locales/fr.pak",
+            ]:
+                (output / name).touch()
+            source = workspace / "main.c"
+            source.write_text("int apostate_marker(void) { return 1; }\nint main(void) { return apostate_marker(); }\n")
+            subprocess.run(["gcc", "-o", str(output / "chrome"), str(source)], check=True)
+            tools = workspace / "src/third_party/llvm-build/Release+Asserts/bin"
+            tools.mkdir(parents=True)
+            (tools / "llvm-strip").symlink_to(shutil.which("strip"))
+            (ROOT / "build/MANIFEST.lock").exists() or self.skipTest("no build/MANIFEST.lock")
+            version = (ROOT / "build/CHROMIUM_VERSION").read_text().strip()
+            archive = workspace / f"apostate-{version}-linux-x64.tar.zst"
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts/package-artifact.sh"), "linux-x64", str(archive)],
+                cwd=ROOT,
+                env={**os.environ, "APOSTATE_WORKSPACE": str(workspace)},
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            staged = workspace / f"apostate-{version}-linux-x64/chrome"
+            self.assertNotIn(b"apostate_marker", staged.read_bytes())
+            self.assertIn(b"apostate_marker", (output / "chrome").read_bytes())
+
+
 if __name__ == "__main__":
     unittest.main()
