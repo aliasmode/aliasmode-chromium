@@ -330,11 +330,14 @@ index cfa0ac9..980888a 100644
  
    void WillDrawImage(CanvasImageSource*, bool image_is_texture_backed) final;
 diff --git a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
-index 07b0b93365..d3740e0147 100644
+index 89b0c3c..1bb1cf1 100644
 --- a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
 +++ b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
-@@ -139,3 +139,4 @@ class MODULES_EXPORT OffscreenCanvasRenderingContext2D final
- 
- #endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_CANVAS_OFFSCREENCANVAS2D_OFFSCREEN_CANVAS_RENDERING_CONTEXT_2D_H_
+@@ -130,6 +130,7 @@ class MODULES_EXPORT OffscreenCanvasRenderingContext2D final
+  private:
+   void FinalizeFrame(FlushReason) final;
    bool ApostateReadbackNoised() const override { return ApostateDrawn(); }
 +  const SkRegion* ApostateKeptPixels() const override { return ApostateKept(); }
+ 
+   scoped_refptr<ExportedCanvasResource> ProduceCanvasResource(FlushReason);
+ 

@@ -1113,14 +1113,17 @@ index 57940e6..cfa0ac9 100644
  
    void WillDrawImage(CanvasImageSource*, bool image_is_texture_backed) final;
 diff --git a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
-index e29a07b6fe..07b0b93365 100644
+index e29a07b..89b0c3c 100644
 --- a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
 +++ b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h
-@@ -138,3 +138,4 @@ class MODULES_EXPORT OffscreenCanvasRenderingContext2D final
- }  // namespace blink
+@@ -129,6 +129,7 @@ class MODULES_EXPORT OffscreenCanvasRenderingContext2D final
  
- #endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_CANVAS_OFFSCREENCANVAS2D_OFFSCREEN_CANVAS_RENDERING_CONTEXT_2D_H_
+  private:
+   void FinalizeFrame(FlushReason) final;
 +  bool ApostateReadbackNoised() const override { return ApostateDrawn(); }
+ 
+   scoped_refptr<ExportedCanvasResource> ProduceCanvasResource(FlushReason);
+ 
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_readback_noise.cc b/third_party/blink/renderer/modules/webgl/webgl_readback_noise.cc
 index 0235130..774f0df 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_readback_noise.cc
