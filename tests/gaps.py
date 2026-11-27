@@ -14,6 +14,12 @@ import pytest
 DOCS = "https://docs.apostate.dev/known-gaps"
 
 GAPS = {
+    "macos-persona-on-windows": (
+        "A macOS persona does not start on a Windows host: the composed profile its child "
+        "processes receive is longer than the 32,767 characters a Windows command line holds, "
+        "so the GPU process cannot launch and the browser exits.",
+        f"{DOCS}#a-macos-persona-does-not-start-on-windows",
+    ),
     "apple-gpu-limits": (
         "On an Apple silicon host, a Windows or Linux persona reports the Apple GPU's value for "
         "WebGL MAX_UNIFORM_BLOCK_SIZE and for some WebGPU adapter limits and features.",

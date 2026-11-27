@@ -10,7 +10,7 @@ The host is the computer the browser runs on. A [persona](/concepts/personas) ch
 | Host | Persona | Recommendation |
 | --- | --- | --- |
 | Windows x64 | Windows | The closest pair for a Windows persona. Fonts, text drawing, file path parsing and the Widevine module are Windows's own. The package install and Widevine are not yet verified on Windows hosts. |
-| Windows x64 | macOS | Avoid. The persona claims Apple silicon on an x86 CPU, `apostate fonts` cannot install macOS fonts on Windows, and Windows file path parsing stays on. |
+| Windows x64 | macOS | Does not start ([Known gaps](/known-gaps#a-macos-persona-does-not-start-on-windows)). The persona also claims Apple silicon on an x86 CPU, `apostate fonts` cannot install macOS fonts on Windows, and Windows file path parsing stays on. |
 | Windows x64 | Linux | Avoid. Windows file path parsing stays on under any persona, and a page can read it with one call. |
 | Linux x64 | Windows | The usual server pair and the default on Linux. Install the Windows fonts. Text is drawn by FreeType and the Widevine module is the Linux one; [Known gaps](/known-gaps#the-linux-widevine-module-under-a-windows-persona) has what that costs. |
 | Linux x64 | Linux | Needs nothing installed. The persona names an NVIDIA RTX GPU. FingerprintJS Pro scored Linux personas `anomaly_score` 1 on a bare-metal x86 Linux server, as it scored stock Chrome there (4 of 4 runs, 2026-09-26, the build released as 0.4.3). |

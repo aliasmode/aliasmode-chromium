@@ -12,17 +12,24 @@ from __future__ import annotations
 import secrets
 import shutil
 import subprocess
+import sys
 import tempfile
+import time
 from collections import Counter
 
 import pytest
 
+import gaps
 import harness
 
 KINDS = ("audioinput", "audiooutput", "videoinput")
 _RUNS: dict[tuple[str | None, str, str], tuple[dict, dict | None]] = {}
 #: The device tables: the first, and the second that --fingerprint-media-catalogue=2 selects.
 CATALOGUES = ("1", "2")
+
+
+class BrowserExited(Exception):
+    """The browser stopped before the page posted its result."""
 
 
 def _run(server, binary, persona, seed, catalogue="1", timeout=90):
@@ -43,7 +50,18 @@ def _run(server, binary, persona, seed, catalogue="1", timeout=90):
     command.append(f"{server.origin}/media.html?token={token}")
     process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
-        values = server.wait(token, timeout)
+        # Waited for in steps, so a browser that stops at once fails the test at once.
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                values = server.wait(token, 1)
+                break
+            except TimeoutError:
+                if process.poll() is not None:
+                    raise BrowserExited(f"the browser exited with status {process.returncode} "
+                                        "before the page posted its result") from None
+                if time.monotonic() > deadline:
+                    raise
         profile = None if launch.host_mode else harness.composed_profile(process.pid)
     finally:
         process.terminate()
@@ -55,6 +73,17 @@ def _run(server, binary, persona, seed, catalogue="1", timeout=90):
     assert "error" not in values, values["error"]
     _RUNS[key] = (values, profile)
     return _RUNS[key]
+
+
+def _persona_run(record, server, binary, persona, seed, catalogue="1"):
+    """_run for a persona, reporting the documented macOS-on-Windows gap instead of failing on it."""
+    try:
+        return _run(server, binary, persona, seed, catalogue)
+    except BrowserExited as error:
+        if persona == "macos" and sys.platform == "win32":
+            record["error"] = str(error)
+            gaps.expect(record, "macos-persona-on-windows")
+        raise
 
 
 def _chrome_label(label):
@@ -98,7 +127,7 @@ def _host_labels(server, binary):
 def test_the_page_sees_only_the_persona_devices(persona_seed, catalogue, server, binary, record):
     persona, seed = persona_seed
     host_labels = _host_labels(server, binary)
-    values, profile = _run(server, binary, persona, seed, catalogue)
+    values, profile = _persona_run(record, server, binary, persona, seed, catalogue)
     assert profile is not None, "no composed profile was found on a child process"
     want = _expected(profile)
     got = {kind: [device["label"] for device in values["after"] if device["kind"] == kind] for kind in KINDS}
@@ -127,7 +156,7 @@ def test_the_page_sees_only_the_persona_devices(persona_seed, catalogue, server,
 @pytest.mark.parametrize("catalogue", CATALOGUES)
 def test_a_track_is_the_device_it_opened(persona_seed, catalogue, server, binary, record):
     persona, seed = persona_seed
-    values, _ = _run(server, binary, persona, seed, catalogue)
+    values, _ = _persona_run(record, server, binary, persona, seed, catalogue)
     by_id = {device["deviceId"]: device for device in values["after"]}
     opened = [entry for entry in (values["audio"], values["video"], *values["each"]) if entry]
     record.update(opened=opened)
@@ -151,9 +180,9 @@ def test_a_track_is_the_device_it_opened(persona_seed, catalogue, server, binary
 
 def test_same_seed_same_devices(persona_seed, server, binary, record):
     persona, seed = persona_seed
-    first, _ = _run(server, binary, persona, seed)
+    first, _ = _persona_run(record, server, binary, persona, seed)
     _RUNS.pop((persona, seed, "1"))
-    second, _ = _run(server, binary, persona, seed)
+    second, _ = _persona_run(record, server, binary, persona, seed)
     labels = lambda values: sorted((device["kind"], device["label"]) for device in values["after"])  # noqa: E731
     record.update(first=labels(first), second=labels(second))
     assert labels(first) == labels(second)
@@ -161,7 +190,7 @@ def test_same_seed_same_devices(persona_seed, server, binary, record):
 
 def test_different_seeds_differ(persona, server, binary, pytestconfig, record):
     seeds = [seed.strip() for seed in pytestconfig.getoption("--seeds").split(",") if seed.strip()]
-    runs = {seed: _run(server, binary, persona, seed) for seed in seeds}
+    runs = {seed: _persona_run(record, server, binary, persona, seed) for seed in seeds}
     devices = {seed: sorted((d["kind"], d["label"]) for d in (profile.get("media") or {}).get("devices", []))
                for seed, (_, profile) in runs.items()}
     labels = {seed: sorted((d["kind"], d["label"]) for d in values["after"]) for seed, (values, _) in runs.items()}

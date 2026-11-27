@@ -117,6 +117,12 @@ With `--force-device-scale-factor=N`, `devicePixelRatio`, the scale the page is 
 
 **What to do.** On a scaled Windows display, pass the display's own scale, such as `--force-device-scale-factor=1.5` at 150%. The composed machine is the same with or without the switch: `--fingerprint-explain` prints the same `catalogue` line and the same values.
 
+### A macOS persona does not start on Windows
+
+The browser passes the composed profile to each child process on its command line. A macOS persona's profile, with its 180 voices, is about 35,500 characters once encoded, and a Windows command line holds 32,767. The GPU process cannot launch, and the browser exits with "GPU process isn't usable". Windows and Linux personas are about 18,000 and 12,000 characters and start.
+
+**What to do.** Run macOS personas on a macOS or Linux host.
+
 ### A Windows host parses file paths as Windows
 
 Chrome on Windows turns `c:\foo` and `\\server\share` into `file:` URLs, and a page can read that. A Windows persona on Linux or macOS does the same. A macOS or Linux persona on a Windows host does not undo it.
