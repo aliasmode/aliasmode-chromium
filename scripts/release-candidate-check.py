@@ -24,6 +24,7 @@ TARGETS = (
     ("linux-x64", "tar.zst"),
     ("linux-arm64", "tar.zst"),
     ("macos-arm64", "zip"),
+    ("macos-x64", "zip"),
     ("windows-x64", "zip"),
 )
 

@@ -38,8 +38,10 @@ case "$target" in
   linux-x64)
     printf 'target_os = ["linux"]\ntarget_cpu = ["x64"]\n' >> .gclient
     ;;
-  macos-arm64)
-    printf 'target_os = ["mac"]\ntarget_cpu = ["arm64"]\n' >> .gclient
+  macos-arm64|macos-x64)
+    # One checkout serves both Mac targets, so one job can build arm64 and
+    # then cross-build x64 from the same sync.
+    printf 'target_os = ["mac"]\ntarget_cpu = ["arm64", "x64"]\n' >> .gclient
     ;;
   windows-x64)
     printf 'target_os = ["win"]\ntarget_cpu = ["x64"]\n' >> .gclient

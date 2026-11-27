@@ -65,6 +65,7 @@ const EXPECTED_TARGETS = new Set([
   "linux-x64",
   "linux-arm64",
   "macos-arm64",
+  "macos-x64",
   "windows-x64",
 ]);
 const DEFAULT_PROFILE_SCHEMA_PATH = join(ASSET_ROOT, "profile.schema.json");
@@ -97,8 +98,8 @@ const FINGERPRINT_SWITCHES = {
   "--fingerprint-anchor": true,
   "--fingerprint-device-memory": true,
   "--fingerprint-explain": true,
-  "--fingerprint-gpu-renderer": true,
   "--fingerprint-gpu-host": true,
+  "--fingerprint-gpu-renderer": true,
   "--fingerprint-gpu-vendor": true,
   "--fingerprint-hardware-concurrency": true,
   "--fingerprint-locale": true,
@@ -145,6 +146,7 @@ const TARGET_ARTIFACTS = {
   "linux-x64": `apostate-${CHROMIUM_VERSION}-linux-x64.tar.zst`,
   "linux-arm64": `apostate-${CHROMIUM_VERSION}-linux-arm64.tar.zst`,
   "macos-arm64": `apostate-${CHROMIUM_VERSION}-macos-arm64.zip`,
+  "macos-x64": `apostate-${CHROMIUM_VERSION}-macos-x64.zip`,
   "windows-x64": `apostate-${CHROMIUM_VERSION}-windows-x64.zip`,
 };
 
@@ -529,6 +531,7 @@ export function normalizePersona(value) {
 
 export function targetForHost(platform = hostPlatform(), architecture = hostArch()) {
   if (platform === "darwin" && architecture === "arm64") return "macos-arm64";
+  if (platform === "darwin" && architecture === "x64") return "macos-x64";
   if (platform === "linux" && architecture === "x64") return "linux-x64";
   if (platform === "linux" && architecture === "arm64") return "linux-arm64";
   if (platform === "win32" && architecture === "x64") return "windows-x64";
@@ -2404,6 +2407,7 @@ async function hoistSingleRoot(root, archiveName) {
 // Where the browser executable sits inside each platform's archive.
 const EXECUTABLE_LAYOUT = {
   "macos-arm64": "Chromium.app/Contents/MacOS/Chromium",
+  "macos-x64": "Chromium.app/Contents/MacOS/Chromium",
   "linux-x64": "chrome",
   "linux-arm64": "chrome",
   "windows-x64": "chrome.exe",
@@ -2580,7 +2584,7 @@ const PAYLOAD_MARKER_REASON = "no Apostate payload beside it (build/MANIFEST.loc
 // and a location nobody uses only adds latency.
 function wellKnownRoots(target) {
   const home = homedir();
-  if (target === "macos-arm64") return ["/Applications", join(home, "Applications")];
+  if (target.startsWith("macos-")) return ["/Applications", join(home, "Applications")];
   if (target === "linux-x64" || target === "linux-arm64") return [join(home, ".cache", "apostate"), "/opt/apostate"];
   if (target === "windows-x64") {
     // No LOCALAPPDATA means no per-user application data directory to search;
@@ -2599,6 +2603,11 @@ const DISCOVERY_EXECUTABLES = {
     "Apostate.app/Contents/MacOS/Chromium",
     "Apostate.app/Contents/MacOS/Apostate",
   ],
+  "macos-x64": [
+    "Chromium.app/Contents/MacOS/Chromium",
+    "Apostate.app/Contents/MacOS/Chromium",
+    "Apostate.app/Contents/MacOS/Apostate",
+  ],
   "linux-x64": ["chrome"],
   "linux-arm64": ["chrome"],
   "windows-x64": ["chrome.exe"],
@@ -2610,6 +2619,7 @@ const DISCOVERY_EXECUTABLES = {
 // inside it is then one level shorter.
 const BUNDLE_EXECUTABLES = {
   "macos-arm64": ["Contents/MacOS/Chromium", "Contents/MacOS/Apostate"],
+  "macos-x64": ["Contents/MacOS/Chromium", "Contents/MacOS/Apostate"],
 };
 
 // Reported verbatim by `apostate info` and mirrored in
@@ -2761,7 +2771,7 @@ async function verifyPayload(payloadRoot, executable, target) {
   const catalogue = await isRegularFile(join(payloadRoot, "resources", "profiles", "catalogue.json"));
   if (!record && !catalogue) return { reason: PAYLOAD_MARKER_REASON };
   let version = record?.chromium_version ?? null;
-  if (!version && target === "macos-arm64") version = await bundleShortVersion(executable);
+  if (!version && target.startsWith("macos-")) version = await bundleShortVersion(executable);
   if (!version && target !== "windows-x64") version = await probeVersion(executable);
   if (!version) return { reason: "version could not be established" };
   if (version !== CHROMIUM_VERSION) return { reason: `reports Chromium ${version}, not ${CHROMIUM_VERSION}` };
@@ -3811,6 +3821,7 @@ const WIDEVINE_APP_ID = "oimompecagnajdejgnnjijobebaeigek";
 // the OS and architecture.
 const WIDEVINE_LAYOUT = {
   "macos-arm64": { subdir: "mac_arm64", library: "libwidevinecdm.dylib", os: "mac", arch: "arm64", osName: "Mac OS X" },
+  "macos-x64": { subdir: "mac_x64", library: "libwidevinecdm.dylib", os: "mac", arch: "x64", osName: "Mac OS X" },
   "linux-x64": { subdir: "linux_x64", library: "libwidevinecdm.so", os: "linux", arch: "x64", osName: "Linux" },
   "linux-arm64": { subdir: "linux_arm64", library: "libwidevinecdm.so", os: "linux", arch: "arm64", osName: "Linux" },
   "windows-x64": { subdir: "win_x64", library: "widevinecdm.dll", os: "win", arch: "x64", osName: "Windows" },
@@ -4075,7 +4086,7 @@ async function widevineComponentDir(executable, target) {
   const absolute = resolve(String(executable));
   let root;
   let component;
-  if (target === "macos-arm64") {
+  if (target.startsWith("macos-")) {
     const bundle = dirname(dirname(dirname(absolute)));
     if (!bundle.endsWith(".app")) return null;
     root = dirname(bundle);
@@ -4128,7 +4139,7 @@ async function writeWidevineHint(userDataDir, component, layout) {
 async function installWidevine(executable, target, store, layout) {
   const component = await widevineComponentDir(executable, target);
   if (component === null || await hasCdm(component, layout)) return component;
-  if (target === "macos-arm64" && process.platform === "darwin") await runOnce(executable);
+  if (target.startsWith("macos-") && process.platform === "darwin") await runOnce(executable);
   await copyWidevine(store, component, layout);
   return component;
 }
@@ -4182,7 +4193,7 @@ export async function provisionWidevine(options = {}) {
   const executable = await ensureBinary({ ...options, target });
   const component = await widevineComponentDir(executable, target);
   if (component === null) throw new WidevineError(`${executable} is not inside an Apostate install.`, { target });
-  if (target === "macos-arm64" && process.platform === "darwin" && !(await hasCdm(component, layout))) {
+  if (target.startsWith("macos-") && process.platform === "darwin" && !(await hasCdm(component, layout))) {
     await runOnce(executable);
   }
   await copyWidevine(store, component, layout);

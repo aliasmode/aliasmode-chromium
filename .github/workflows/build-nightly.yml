@@ -67,6 +67,7 @@ jobs:
     uses: ./.github/workflows/build-target.yml
     with:
       target: ${{ matrix.target }}
+      also_targets: ${{ matrix.also_targets }}
       runner_labels: ${{ matrix.runner_labels }}
       attest: false
       artifact_prefix: nightly

@@ -18,7 +18,7 @@ usage() {
   cat >&2 <<'EOF'
 usage: scripts/package-artifact.sh <target> <archive-path>
 
-  target        macos-arm64 | linux-x64 | linux-arm64 | windows-x64
+  target        macos-arm64 | macos-x64 | linux-x64 | linux-arm64 | windows-x64
   archive-path  .tar.zst or .zip path to write. The payload manifest is
                 written beside it as <archive-path>.manifest.json and the
                 staging directory as <archive-path-without-extension>/.
@@ -37,7 +37,7 @@ POLICY="$REPO_ROOT/.github/release/artifact-policy.json"
 # Windows path separators are written with '/' here. The runner's POSIX layer
 # accepts them, and the staged layout is identical either way.
 case "$TARGET" in
-  macos-arm64)
+  macos-arm64|macos-x64)
     # The app bundle is the whole payload; everything Chromium needs at runtime
     # is already inside Contents/.
     required='Chromium.app'
@@ -110,7 +110,7 @@ OUT="$SRC/out/$TARGET"
 # Announced either way: "was this release signed" must be answerable from the
 # job log alone.
 PAYLOAD="$OUT"
-if [ "$TARGET" = macos-arm64 ]; then
+if [[ "$TARGET" == macos-* ]]; then
   signed="${APOSTATE_SIGNED_ROOT:-$WORKSPACE/signed}/$TARGET"
   if [ -d "$signed/Chromium.app" ]; then
     PAYLOAD="$signed"

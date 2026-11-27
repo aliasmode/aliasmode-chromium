@@ -123,7 +123,7 @@ depot_dir="$(cd "$DEPOT_TOOLS" && pwd -P)"
 # number below names the run it came from.
 case "${APOSTATE_TARGET:-}" in
   # 66.6GB measured on a complete build: 50 checkout, 16 output, 0.7 depot_tools.
-  macos-arm64) need_gb=68 ;;
+  macos-arm64|macos-x64) need_gb=68 ;;
   # 44.8GB measured: 28.1 checkout (run 35262879677), 16 output, 0.7 depot_tools.
   windows-x64) need_gb=46 ;;
   # Linux is unmeasured -- both Linux targets have only ever run on runners with

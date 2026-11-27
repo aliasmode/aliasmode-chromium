@@ -2,8 +2,8 @@
 # Full build, then write build/MANIFEST.lock recording exactly what produced it.
 source "$(dirname "$0")/lib.sh"
 
-if [ "${1:-$(target_default)}" = macos-arm64 ] && [ "$(uname -s)" != Darwin ]; then
-  die "macos-arm64 builds require a native macOS runner"
+if [[ "${1:-$(target_default)}" == macos-* ]] && [ "$(uname -s)" != Darwin ]; then
+  die "macOS builds require a native macOS runner"
 fi
 if [ "$(uname -s)" = Linux ] && [ -z "${APOSTATE_BUILD_IMAGE_ID:-}" ]; then
   exec bash "$REPO_ROOT/scripts/in-linux-build-container.sh" scripts/build.sh "$@"
@@ -32,7 +32,7 @@ JOBS="${APOSTATE_JOBS:-$(python3 -c "import os;print(max(1,int(os.cpu_count()*0.
 # never reach the shipped payload, so hashing them would widen the
 # reproducibility claim to files the artifact does not contain.
 ninja_targets=(chrome)
-if [ "$TARGET" = macos-arm64 ]; then
+if [[ "$TARGET" == macos-* ]]; then
   ninja_targets+=(chrome/installer/mac)
 fi
 
@@ -182,7 +182,7 @@ trap 'rm -f "$manifest_tmp"' EXIT
   # makes its outputs_sha256 the hash of nothing and silently turns
   # scripts/verify-reproducible.sh into a no-op for that platform.
   case "$TARGET" in
-    macos-arm64) artifacts='Chromium.app chrome_crashpad_handler' ;;
+    macos-arm64|macos-x64) artifacts='Chromium.app chrome_crashpad_handler' ;;
     linux-x64|linux-arm64) artifacts='chrome chrome_crashpad_handler libEGL.so libGLESv2.so' ;;
     windows-x64) artifacts='chrome.exe chrome.dll chrome_elf.dll libEGL.dll libGLESv2.dll' ;;
     *) die "no output list for target: $TARGET" ;;

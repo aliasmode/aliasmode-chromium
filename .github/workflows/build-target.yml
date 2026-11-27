@@ -7,9 +7,14 @@ on:
   workflow_call:
     inputs:
       target:
-        description: "Build target: macos-arm64 | linux-x64 | linux-arm64 | windows-x64"
+        description: "Build target: macos-arm64 | macos-x64 | linux-x64 | linux-arm64 | windows-x64"
         required: true
         type: string
+      also_targets:
+        description: "Targets built after the first one in this same job, from the same checkout (macos-x64 after macos-arm64)"
+        required: false
+        type: string
+        default: ""
       runner_labels:
         description: "JSON array literal of WarpBuild runner labels, e.g. [\"warp-macos-26-arm64-12x\"]"
         required: true
@@ -84,7 +89,7 @@ jobs:
       APOSTATE_FRESH_BUILD: "1"
       # The 0.75 default leaves headroom on a workstation someone is using; a
       # hosted runner is doing nothing else. Lower if linking OOMs.
-      APOSTATE_JOBS: ${{ inputs.target == 'macos-arm64' && '12' || '' }}
+      APOSTATE_JOBS: ${{ startsWith(inputs.target, 'macos-') && '12' || '' }}
     steps:
       - name: Initialize job workspace
         shell: bash
@@ -223,7 +228,7 @@ jobs:
       # Without the six secrets the script prints one line and exits 0, which
       # is what keeps nightlies and forks building.
       - name: Sign and notarize (macOS)
-        if: ${{ inputs.target == 'macos-arm64' }}
+        if: ${{ startsWith(inputs.target, 'macos-') }}
         shell: bash
         env:
           APPLE_DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
@@ -255,3 +260,45 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ env.ARCHIVE }}
+      # macos-x64 after macos-arm64, from the same checkout: the Mac sync
+      # fetches both CPUs, so the second target costs only its compile. The
+      # first target's output is uploaded by now and is removed for disk.
+      - name: Build, sign and package macos-x64
+        if: ${{ contains(inputs.also_targets, 'macos-x64') }}
+        shell: bash
+        env:
+          APPLE_DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          target=macos-x64
+          version="$(tr -d '[:space:]' < build/CHROMIUM_VERSION)"
+          archive="apostate-$version-$target.zip"
+          python3 -c 'import json,sys; sys.exit(0 if sys.argv[1] in json.load(open(".github/release/artifact-policy.json"))["artifacts"]["filenames"] else "release policy does not name " + sys.argv[1])' "$archive"
+          rm -rf "$APOSTATE_WORKSPACE/src/out/$APOSTATE_TARGET"
+          bash scripts/configure.sh "$target"
+          bash scripts/build.sh "$target"
+          python3 scripts/validate-release-baseline.py --root . --release
+          bash scripts/smoke-binary.sh "$target"
+          bash scripts/sign-macos.sh "$target"
+          bash scripts/package-artifact.sh "$target" "$archive"
+          printf 'ARCHIVE_X64=%s\n' "$archive" >> "$GITHUB_ENV"
+      - name: Upload macos-x64 artifact and manifest
+        if: ${{ contains(inputs.also_targets, 'macos-x64') }}
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
+        with:
+          name: ${{ inputs.artifact_prefix }}-macos-x64-${{ inputs.ref != '' && inputs.ref || github.sha }}
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
+          path: |
+            ${{ env.ARCHIVE_X64 }}
+            ${{ env.ARCHIVE_X64 }}.manifest.json
+      - name: Attest macos-x64 build provenance
+        if: ${{ inputs.attest && contains(inputs.also_targets, 'macos-x64') }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ env.ARCHIVE_X64 }}

@@ -36,6 +36,7 @@
         "linux-x64",
         "linux-arm64",
         "macos-arm64",
+        "macos-x64",
         "windows-x64"
       ],
       "description": "The exact binary target represented by artifact."
@@ -44,7 +45,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 256,
-      "pattern": "^apostate-159\\.0\\.8154\\.34-(?:linux-x64|linux-arm64|macos-arm64|windows-x64)\\.(?:tar\\.zst|zip)$",
+      "pattern": "^apostate-159\\.0\\.8154\\.34-(?:linux-x64|linux-arm64|macos-arm64|macos-x64|windows-x64)\\.(?:tar\\.zst|zip)$",
       "description": "Immutable artifact filename. It is deliberately restricted to the release naming contract and cannot contain a path or credential-bearing URI."
     },
     "sha256": {
@@ -75,6 +76,7 @@
           "platform": {
             "enum": [
               "macos-arm64",
+              "macos-x64",
               "windows-x64"
             ]
           }
@@ -83,7 +85,7 @@
       "then": {
         "properties": {
           "artifact": {
-            "pattern": "^apostate-159\\.0\\.8154\\.34-(?:macos-arm64|windows-x64)\\.zip$"
+            "pattern": "^apostate-159\\.0\\.8154\\.34-(?:macos-arm64|macos-x64|windows-x64)\\.zip$"
           }
         }
       }

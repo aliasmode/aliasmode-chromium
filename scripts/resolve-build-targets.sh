@@ -34,6 +34,9 @@ runner_labels = {
     "linux-x64": ["warp-ubuntu-latest-x64-32x"],
     "linux-arm64": ["warp-ubuntu-latest-x64-32x"],
     "macos-arm64": ["warp-macos-26-arm64-12x"],
+    # Cross-built on the same Apple silicon runner. With macos-arm64 it rides
+    # in that job (also_targets below), so one sync builds both Macs.
+    "macos-x64": ["warp-macos-26-arm64-12x"],
     "windows-x64": ["warp-windows-2025-x64-32x"],
 }
 
@@ -53,16 +56,22 @@ for piece in raw.split(","):
 if not targets:
     raise SystemExit("no build targets resolved")
 
-include = [
-    {
+# macos-x64 is built after macos-arm64 in the macos-arm64 job when both are
+# requested: the Mac checkout serves both, and a second job would pay for a
+# second sync on the most expensive runner.
+also = {"macos-arm64": ["macos-x64"]}
+include = []
+for target in targets:
+    if any(target in also.get(other, []) for other in targets):
+        continue
+    include.append({
+        "also_targets": ",".join(t for t in also.get(target, []) if t in targets),
         "runner_labels": json.dumps(
             runner_labels[target],
             separators=(",", ":"),
         ),
         "target": target,
-    }
-    for target in targets
-]
+    })
 print("targets=" + ",".join(targets))
 print("matrix=" + json.dumps({"include": include}, sort_keys=True, separators=(",", ":")))
 PY

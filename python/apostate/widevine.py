@@ -60,6 +60,7 @@ class _Platform(NamedTuple):
 
 _LAYOUT: dict[str, _Platform] = {
     "macos-arm64": _Platform("mac_arm64", "libwidevinecdm.dylib", "mac", "arm64", "Mac OS X"),
+    "macos-x64": _Platform("mac_x64", "libwidevinecdm.dylib", "mac", "x64", "Mac OS X"),
     "linux-x64": _Platform("linux_x64", "libwidevinecdm.so", "linux", "x64", "Linux"),
     "linux-arm64": _Platform("linux_arm64", "libwidevinecdm.so", "linux", "arm64", "Linux"),
     "windows-x64": _Platform("win_x64", "widevinecdm.dll", "win", "x64", "Windows"),
@@ -307,7 +308,7 @@ def _component_dir(executable: Path, target: str) -> Path | None:
     ``resources/profiles/`` beside the browser. Nothing else is written into.
     """
     executable = Path(executable).expanduser().absolute()
-    if target == "macos-arm64":
+    if target.startswith("macos-"):
         bundle = executable.parent.parent.parent
         if bundle.suffix != ".app":
             return None
@@ -359,7 +360,7 @@ def _install(executable: Path, target: str, store: Path, spec: _Platform) -> Pat
     component = _component_dir(executable, target)
     if component is None or _has_cdm(component, spec):
         return component
-    if target == "macos-arm64" and sys.platform == "darwin":
+    if target.startswith("macos-") and sys.platform == "darwin":
         _run_once(executable)
     _copy(store, component, spec)
     return component
@@ -426,7 +427,7 @@ def provision(*, target: str | None = None, source: str | Path | None = None,
     component = _component_dir(executable, target_name)
     if component is None:
         raise WidevineError(f"{executable} is not inside an Apostate install")
-    if target_name == "macos-arm64" and sys.platform == "darwin" and not _has_cdm(component, spec):
+    if target_name.startswith("macos-") and sys.platform == "darwin" and not _has_cdm(component, spec):
         _run_once(executable)
     _copy(store, component, spec)
     return {

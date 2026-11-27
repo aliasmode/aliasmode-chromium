@@ -8,7 +8,7 @@ fi
 source "$REPO_ROOT/scripts/lib.sh"
 target="${1:-${APOSTATE_TARGET:-$(target_default)}}"
 case "$target" in
-  linux-x64|linux-arm64|macos-arm64|windows-x64) ;;
+  linux-x64|linux-arm64|macos-arm64|macos-x64|windows-x64) ;;
   *) die "unsupported target: $target" ;;
 esac
 cd "$WORKSPACE"

@@ -10,7 +10,7 @@ target="${1:-}"
 # windows-x64 builds natively against the Visual Studio and Windows SDK
 # installations named in build/args/windows-x64.gn.
 case "$target:${RUNNER_OS:-}:${RUNNER_ARCH:-}" in
-  macos-arm64:macOS:ARM64|linux-x64:Linux:X64|linux-arm64:Linux:X64|windows-x64:Windows:X64)
+  macos-arm64:macOS:ARM64|macos-x64:macOS:ARM64|linux-x64:Linux:X64|linux-arm64:Linux:X64|windows-x64:Windows:X64)
     ;;
   *)
     printf 'error: runner does not match target %s (OS=%s ARCH=%s)\n' \

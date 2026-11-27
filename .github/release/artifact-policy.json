@@ -21,6 +21,7 @@
       "linux-x64",
       "linux-arm64",
       "macos-arm64",
+      "macos-x64",
       "windows-x64"
     ],
     "canonical_json": {
@@ -34,6 +35,7 @@
       "apostate-159.0.8154.34-linux-x64.tar.zst",
       "apostate-159.0.8154.34-linux-arm64.tar.zst",
       "apostate-159.0.8154.34-macos-arm64.zip",
+      "apostate-159.0.8154.34-macos-x64.zip",
       "apostate-159.0.8154.34-windows-x64.zip"
     ],
     "hash": {

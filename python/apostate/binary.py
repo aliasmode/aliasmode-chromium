@@ -79,13 +79,14 @@ _INSTALL_FORMAT = 2
 _MARKER_NAME = "install.json"
 _INSTALL_NAME = "install"
 
-_TARGETS = ("linux-x64", "linux-arm64", "macos-arm64", "windows-x64")
+_TARGETS = ("linux-x64", "linux-arm64", "macos-arm64", "macos-x64", "windows-x64")
 
 #: Where the browser executable sits inside each platform's archive. Checked
 #: before the fallback scan so a tree that also ships helper executables still
 #: resolves to exactly one answer.
 _EXECUTABLE_LAYOUT: dict[str, tuple[str, ...]] = {
     "macos-arm64": ("Chromium.app/Contents/MacOS/Chromium",),
+    "macos-x64": ("Chromium.app/Contents/MacOS/Chromium",),
     "linux-x64": ("chrome",),
     "linux-arm64": ("chrome",),
     "windows-x64": ("chrome.exe",),
@@ -113,7 +114,8 @@ def target_platform(value: str | None = None) -> str:
     if value:
         normalized = value.strip().lower().replace("_", "-")
         aliases = {"darwin-arm64": "macos-arm64", "mac-arm64": "macos-arm64",
-                   "osx-arm64": "macos-arm64", "win-x64": "windows-x64",
+                   "osx-arm64": "macos-arm64", "darwin-x64": "macos-x64",
+                   "mac-x64": "macos-x64", "osx-x64": "macos-x64", "win-x64": "windows-x64",
                    "linux-aarch64": "linux-arm64", "linux-amd64": "linux-x64"}
         normalized = aliases.get(normalized, normalized)
         if normalized in _TARGETS:
@@ -122,8 +124,8 @@ def target_platform(value: str | None = None) -> str:
     system = platform.system().lower()
     machine = platform.machine().lower()
     arch = "arm64" if machine in {"arm64", "aarch64"} else "x64" if machine in {"x86_64", "amd64", "x86-64"} else machine
-    if system == "darwin" and arch == "arm64":
-        return "macos-arm64"
+    if system == "darwin" and arch in {"x64", "arm64"}:
+        return f"macos-{arch}"
     if system == "linux" and arch in {"x64", "arm64"}:
         return f"linux-{arch}"
     if system == "windows" and arch == "x64":
@@ -267,7 +269,7 @@ def artifact_url(manifest: Mapping[str, Any], record: Mapping[str, Any]) -> str:
 #: .github/release/artifact-policy.json. Needed before any manifest is in
 #: hand, because the per-artifact manifest is fetched *by* archive name.
 _ARCHIVE_EXTENSION = {"linux-x64": "tar.zst", "linux-arm64": "tar.zst",
-                      "macos-arm64": "zip", "windows-x64": "zip"}
+                      "macos-arm64": "zip", "macos-x64": "zip", "windows-x64": "zip"}
 
 #: What a release publishes beside each archive.
 _RELEASE_MANIFEST_SUFFIX = ".manifest.json"
@@ -703,6 +705,9 @@ _DISCOVERY_LAYOUT: dict[str, tuple[str, ...]] = {
     "macos-arm64": ("Chromium.app/Contents/MacOS/Chromium",
                     "Apostate.app/Contents/MacOS/Chromium",
                     "Apostate.app/Contents/MacOS/Apostate"),
+    "macos-x64": ("Chromium.app/Contents/MacOS/Chromium",
+                  "Apostate.app/Contents/MacOS/Chromium",
+                  "Apostate.app/Contents/MacOS/Apostate"),
     "linux-x64": ("chrome",),
     "linux-arm64": ("chrome",),
     "windows-x64": ("chrome.exe",),
@@ -725,7 +730,7 @@ def _well_known_roots(target: str) -> tuple[Path, ...]:
     README does not name is a launch whose binary the user cannot account
     for. Tests and callers that need none of this pass ``search_roots=()``.
     """
-    if target == "macos-arm64":
+    if target.startswith("macos-"):
         return (Path("/Applications"), Path.home() / "Applications")
     if target == "windows-x64":
         base = os.environ.get("LOCALAPPDATA")
@@ -822,7 +827,7 @@ def _verify_payload(root: Path, executable: Path,
     if record is None and not root.joinpath(*_PAYLOAD_RESOURCES).is_file():
         return None, _NO_PAYLOAD
     version = record.get("chromium_version") if record is not None else None
-    if version is None and target == "macos-arm64":
+    if version is None and target.startswith("macos-"):
         version = _bundle_version(executable)
     if version is None:
         version = _reported_version(executable, target)

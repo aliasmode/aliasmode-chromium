@@ -314,6 +314,7 @@ fi
 target_default() {
   case "$(uname -s)-$(uname -m)" in
     Darwin-arm64) echo "macos-arm64" ;;
+    Darwin-x86_64) echo "macos-x64" ;;
     Linux-x86_64) echo "linux-x64" ;;
     # Git Bash reports MINGW64_NT-10.0-26100. Windows became a build target
     # without this branch being added, so every script that resolves its
@@ -329,7 +330,7 @@ target_default() {
 browser_binary() {
   local target="${1:-$(target_default)}"
   case "$target" in
-    macos-arm64) printf '%s\n' "$SRC/out/$target/Chromium.app/Contents/MacOS/Chromium" ;;
+    macos-arm64|macos-x64) printf '%s\n' "$SRC/out/$target/Chromium.app/Contents/MacOS/Chromium" ;;
     windows-x64) printf '%s\n' "$SRC/out/$target/chrome.exe" ;;
     *) printf '%s\n' "$SRC/out/$target/chrome" ;;
   esac

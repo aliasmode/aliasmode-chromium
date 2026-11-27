@@ -9,7 +9,7 @@ TARGET="${1:-$(target_default)}"
 OUT="$SRC/out/$TARGET"
 
 case "$TARGET" in
-  macos-arm64) binary="$OUT/Chromium.app/Contents/MacOS/Chromium" ;;
+  macos-arm64|macos-x64) binary="$OUT/Chromium.app/Contents/MacOS/Chromium" ;;
   linux-x64|linux-arm64) binary="$OUT/chrome" ;;
   windows-x64) binary="$OUT/chrome.exe" ;;
   *) die "unsupported target: $TARGET" ;;
@@ -35,6 +35,15 @@ if [ "$TARGET" = linux-arm64 ]; then
   case "$format" in
     *aarch64*|*ARM64*|*"ARM aarch64"*) say "cross-built ARM64 binary: $format" ;;
     *) die "unexpected ARM64 binary format: $format" ;;
+  esac
+elif [ "$TARGET" = macos-x64 ] && [ "$(uname -m)" = arm64 ] &&
+  ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+  # macos-x64 is cross-built on the Apple silicon runner. Without Rosetta the
+  # binary cannot run there, so check the Mach-O machine type instead.
+  format="$(file -b "$binary")"
+  case "$format" in
+    *x86_64*) say "cross-built x86_64 binary: $format" ;;
+    *) die "unexpected x86_64 binary format: $format" ;;
   esac
 elif [ "$TARGET" = windows-x64 ]; then
   # `chrome.exe --version` must not be run, because on Windows it does not

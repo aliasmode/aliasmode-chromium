@@ -2,8 +2,8 @@
 # Write args.gn from the pinned target file and run gn gen.
 source "$(dirname "$0")/lib.sh"
 
-if [ "${1:-$(target_default)}" = macos-arm64 ] && [ "$(uname -s)" != Darwin ]; then
-  die "macos-arm64 configuration requires a native macOS runner"
+if [[ "${1:-$(target_default)}" == macos-* ]] && [ "$(uname -s)" != Darwin ]; then
+  die "macOS configuration requires a native macOS runner"
 fi
 if [ "$(uname -s)" = Linux ] && [ -z "${APOSTATE_BUILD_IMAGE_ID:-}" ]; then
   exec bash "$REPO_ROOT/scripts/in-linux-build-container.sh" scripts/configure.sh "$@"
@@ -66,7 +66,7 @@ esac
 # Without this, Chromium picks the newest SDK the active Xcode provides and an
 # Xcode upgrade silently changes a build input.
 MAC_SDK_PATH=""
-if [ "$TARGET" = macos-arm64 ]; then
+if [[ "$TARGET" == macos-* ]]; then
   MAC_SDK_PATH="//out/$TARGET/$(bash "$REPO_ROOT/scripts/prepare-mac-sdk.sh" "$OUT" | tail -1)"
 fi
 

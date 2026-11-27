@@ -17,7 +17,7 @@
 source "$(dirname "$0")/lib.sh"
 
 TARGET="${1:-$(target_default)}"
-[ "$TARGET" = macos-arm64 ] || die "sign-macos.sh signs macos-arm64 only, not $TARGET"
+[[ "$TARGET" == macos-* ]] || die "sign-macos.sh signs macOS targets only, not $TARGET"
 [ "$(uname -s)" = Darwin ] || die "signing requires a native macOS host"
 
 OUT="$SRC/out/$TARGET"
