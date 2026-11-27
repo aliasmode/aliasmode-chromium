@@ -1,0 +1,414 @@
+Subject: [PATCH] network: listed loopback ports answer as closed
+
+--aliasmode-closed-loopback-ports=<ports and a-b ranges> makes the listed
+ports on 127.0.0.0/8, [::1] and localhost answer a web page as a closed
+port does, so a page cannot find the launcher's or another local
+service's open ports by timing or by the error it gets.
+
+The network service holds one port bound on 127.0.0.1 and on [::1] (IPv4
+alone where [::1] cannot be bound) and never listens on it. A page's
+request to a listed loopback port is sent to that port instead, before
+the request is made, so the operating system refuses it as it refuses
+any closed port: the same error and timing as an unused port, and no
+connection reaches the service on the listed port. This covers fetch,
+XHR, subresources, iframes and CORS preflights (URLLoader), WebSockets,
+and TURN over TCP and TLS. The local network access checks and prompts
+are unchanged and still see the URL the page asked for.
+
+Only requests from an http(s) page, or an opaque origin one created,
+whose address space is more public than loopback are changed. Requests
+from the browser itself, from extensions and from pages on loopback are
+untouched. TURN connections carry no initiator, so every page's TURN
+connection to a listed port is closed, unless its top-frame site has
+another scheme. The switch reaches the network service through the
+common child switches.
+
+Without the switch nothing changes.
+
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 4b015f9..f408fa5 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -3147,6 +3147,9 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
+       // sockets are relayed through the configured proxy, sent directly, or
+       // not created at all.
+       "fingerprint-webrtc-udp",
++      // AliasMode: read in the network service, where it closes the listed
++      // loopback ports to web pages.
++      "aliasmode-closed-loopback-ports",
+   };
+   command_line->CopySwitchesFrom(browser_command_line, kCommonSwitchNames);
+ 
+diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
+index ebc6e17..6d1763f 100644
+--- a/services/network/BUILD.gn
++++ b/services/network/BUILD.gn
+@@ -15,6 +15,8 @@ component("network_service") {
+     "accept_ch_frame_interceptor.h",
+     "chunked_data_pipe_upload_data_stream.cc",
+     "chunked_data_pipe_upload_data_stream.h",
++    "closed_loopback_ports.cc",
++    "closed_loopback_ports.h",
+     "conditional_cache_deletion_helper.cc",
+     "conditional_cache_deletion_helper.h",
+     "connection_change_observer.cc",
+diff --git a/services/network/closed_loopback_ports.cc b/services/network/closed_loopback_ports.cc
+new file mode 100644
+index 0000000..695761d
+--- /dev/null
++++ b/services/network/closed_loopback_ports.cc
+@@ -0,0 +1,202 @@
++// Copyright 2026 The AliasMode Authors
++// Use of this source code is governed by a GPL-3.0 license that can be
++// found in the LICENSE file.
++
++#include "services/network/closed_loopback_ports.h"
++
++#include <stdint.h>
++
++#include <memory>
++#include <string>
++#include <string_view>
++#include <utility>
++#include <vector>
++
++#include "base/command_line.h"
++#include "base/logging.h"
++#include "base/no_destructor.h"
++#include "base/sequence_checker.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_split.h"
++#include "net/base/address_family.h"
++#include "net/base/host_port_pair.h"
++#include "net/base/ip_address.h"
++#include "net/base/ip_endpoint.h"
++#include "net/base/net_errors.h"
++#include "net/base/network_anonymization_key.h"
++#include "net/base/schemeful_site.h"
++#include "net/base/url_util.h"
++#include "net/log/net_log_source.h"
++#include "net/socket/tcp_socket.h"
++#include "services/network/public/cpp/ip_address_space_util.h"
++#include "services/network/public/mojom/client_security_state.mojom.h"
++#include "services/network/public/mojom/ip_address_space.mojom.h"
++#include "url/scheme_host_port.h"
++#include "url/url_constants.h"
++
++namespace network {
++
++namespace {
++
++constexpr char kAliasModeClosedLoopbackPorts[] =
++    "aliasmode-closed-loopback-ports";
++
++// Attempts at a port that is free on both 127.0.0.1 and [::1] before the
++// sink settles for IPv4 alone.
++constexpr int kSinkBindAttempts = 16;
++
++bool IsHttpScheme(std::string_view scheme) {
++  return scheme == url::kHttpScheme || scheme == url::kHttpsScheme;
++}
++
++class ClosedLoopbackPorts {
++ public:
++  static ClosedLoopbackPorts& Get() {
++    static base::NoDestructor<ClosedLoopbackPorts> instance;
++    return *instance;
++  }
++
++  ClosedLoopbackPorts() {
++    const base::CommandLine& command_line =
++        *base::CommandLine::ForCurrentProcess();
++    if (!command_line.HasSwitch(kAliasModeClosedLoopbackPorts)) {
++      return;
++    }
++    const std::string value =
++        command_line.GetSwitchValueASCII(kAliasModeClosedLoopbackPorts);
++    for (std::string_view item : base::SplitStringPiece(
++             value, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
++      const std::vector<std::string_view> bounds = base::SplitStringPiece(
++          item, "-", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
++      unsigned first = 0;
++      unsigned last = 0;
++      if (bounds.empty() || bounds.size() > 2 ||
++          !base::StringToUint(bounds.front(), &first) ||
++          !base::StringToUint(bounds.back(), &last) || first < 1 ||
++          last > 65535 || first > last) {
++        LOG(WARNING) << "--" << kAliasModeClosedLoopbackPorts << ": ignoring '"
++                     << item << "'";
++        continue;
++      }
++      ranges_.emplace_back(static_cast<int>(first), static_cast<int>(last));
++    }
++  }
++
++  ClosedLoopbackPorts(const ClosedLoopbackPorts&) = delete;
++  ClosedLoopbackPorts& operator=(const ClosedLoopbackPorts&) = delete;
++
++  bool IsListed(int port) const {
++    for (const auto& [first, last] : ranges_) {
++      if (port >= first && port <= last) {
++        return true;
++      }
++    }
++    return false;
++  }
++
++  // The port every closed connection is sent to, bound on the first call.
++  uint16_t SinkPort() {
++    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++    if (!sink_bound_) {
++      sink_bound_ = true;
++      BindSink();
++    }
++    return sink_port_;
++  }
++
++ private:
++  // Binds 127.0.0.1:X and [::1]:X with one X and never listens, so a
++  // connection to X on either loopback address is refused, as on a closed
++  // port, and nothing else on this machine can take X while the browser
++  // runs. Where [::1] cannot be bound at all, IPv4 alone is kept.
++  void BindSink() {
++    for (int attempt = 0; attempt < kSinkBindAttempts; ++attempt) {
++      std::unique_ptr<net::TCPSocket> v4 =
++          net::TCPSocket::Create(nullptr, nullptr, net::NetLogSource());
++      net::IPEndPoint v4_address;
++      if (v4->Open(net::ADDRESS_FAMILY_IPV4) != net::OK ||
++          v4->Bind(net::IPEndPoint(net::IPAddress::IPv4Localhost(), 0)) !=
++              net::OK ||
++          v4->GetLocalAddress(&v4_address) != net::OK) {
++        continue;
++      }
++      std::unique_ptr<net::TCPSocket> v6 =
++          net::TCPSocket::Create(nullptr, nullptr, net::NetLogSource());
++      int v6_result = v6->Open(net::ADDRESS_FAMILY_IPV6);
++      if (v6_result == net::OK) {
++        v6_result = v6->Bind(net::IPEndPoint(net::IPAddress::IPv6Localhost(),
++                                             v4_address.port()));
++      }
++      if (v6_result == net::ERR_ADDRESS_IN_USE ||
++          v6_result == net::ERR_ACCESS_DENIED) {
++        // [::1] works but X is taken there: try another X.
++        continue;
++      }
++      sink_v4_ = std::move(v4);
++      if (v6_result == net::OK) {
++        sink_v6_ = std::move(v6);
++      }
++      sink_port_ = v4_address.port();
++      return;
++    }
++    // Port 0 is refused before any connection is tried, so a listed port
++    // still never reaches its service.
++    LOG(ERROR) << "--" << kAliasModeClosedLoopbackPorts
++               << ": no loopback port could be bound";
++  }
++
++  std::vector<std::pair<int, int>> ranges_;
++  bool sink_bound_ = false;
++  uint16_t sink_port_ = 0;
++  std::unique_ptr<net::TCPSocket> sink_v4_;
++  std::unique_ptr<net::TCPSocket> sink_v6_;
++  SEQUENCE_CHECKER(sequence_checker_);
++};
++
++}  // namespace
++
++GURL MaybeCloseLoopbackPort(
++    const GURL& url,
++    const std::optional<url::Origin>& initiator,
++    const mojom::ClientSecurityState* client_security_state) {
++  ClosedLoopbackPorts& ports = ClosedLoopbackPorts::Get();
++  if (!(url.SchemeIsHTTPOrHTTPS() || url.SchemeIsWSOrWSS()) ||
++      !ports.IsListed(url.EffectiveIntPort()) || !net::IsLocalhost(url)) {
++    return url;
++  }
++  // A sandboxed frame's opaque origin keeps the scheme of its creator.
++  if (!initiator ||
++      !IsHttpScheme(initiator->GetTupleOrPrecursorTupleIfOpaque().scheme())) {
++    return url;
++  }
++  const mojom::IPAddressSpace initiator_space =
++      client_security_state ? client_security_state->ip_address_space
++                            : mojom::IPAddressSpace::kUnknown;
++  if (!IsLessPublicAddressSpace(mojom::IPAddressSpace::kLoopback,
++                                initiator_space)) {
++    return url;
++  }
++  const std::string port = base::NumberToString(ports.SinkPort());
++  GURL::Replacements replacements;
++  replacements.SetPortStr(port);
++  return url.ReplaceComponents(replacements);
++}
++
++void MaybeCloseLoopbackPort(
++    net::HostPortPair& destination,
++    const net::NetworkAnonymizationKey& network_anonymization_key) {
++  ClosedLoopbackPorts& ports = ClosedLoopbackPorts::Get();
++  if (!ports.IsListed(destination.port()) ||
++      !net::HostStringIsLocalhost(destination.host())) {
++    return;
++  }
++  const std::optional<net::SchemefulSite>& top_frame_site =
++      network_anonymization_key.GetTopFrameSite();
++  if (top_frame_site && !top_frame_site->opaque() &&
++      !IsHttpScheme(top_frame_site->GetURL().scheme())) {
++    return;
++  }
++  destination.set_port(ports.SinkPort());
++}
++
++}  // namespace network
+diff --git a/services/network/closed_loopback_ports.h b/services/network/closed_loopback_ports.h
+new file mode 100644
+index 0000000..efe63e5
+--- /dev/null
++++ b/services/network/closed_loopback_ports.h
+@@ -0,0 +1,57 @@
++// Copyright 2026 The AliasMode Authors
++// Use of this source code is governed by a GPL-3.0 license that can be
++// found in the LICENSE file.
++
++#ifndef SERVICES_NETWORK_CLOSED_LOOPBACK_PORTS_H_
++#define SERVICES_NETWORK_CLOSED_LOOPBACK_PORTS_H_
++
++#include <optional>
++
++#include "base/component_export.h"
++#include "url/gurl.h"
++#include "url/origin.h"
++
++namespace net {
++class HostPortPair;
++class NetworkAnonymizationKey;
++}  // namespace net
++
++namespace network {
++
++namespace mojom {
++class ClientSecurityState;
++}  // namespace mojom
++
++// AliasMode: --aliasmode-closed-loopback-ports=<ports and a-b ranges> makes
++// the listed ports on this machine's loopback addresses answer a web page as
++// a closed port does. A request a page makes to one of them is sent to a port
++// of the same loopback host that this process holds bound and never listens
++// on, so the operating system refuses it as it refuses any closed port: same
++// error, same timing, and nothing reaches the service on the listed port.
++// The local network access checks and prompts are unchanged. Requests from
++// the browser itself, from extensions, and from pages on loopback are
++// untouched. Without the switch nothing changes.
++
++// Returns `url` with its port replaced by the closed port's when `url` is an
++// http(s) or ws(s) URL of a loopback host (127.0.0.0/8, [::1], localhost) on
++// a listed port, `initiator` is an http(s) origin (or an opaque origin created
++// by one), and the initiator's address space is more public than loopback. A
++// missing `client_security_state` counts as public. Else returns `url`.
++COMPONENT_EXPORT(NETWORK_SERVICE)
++GURL MaybeCloseLoopbackPort(
++    const GURL& url,
++    const std::optional<url::Origin>& initiator,
++    const mojom::ClientSecurityState* client_security_state);
++
++// The same for a WebRTC TCP connection (TURN over TCP or TLS), which carries
++// no initiator: the port of `destination` is replaced when its host is a
++// loopback host, the port is listed, and the connection is not for a
++// top-frame site of another scheme, such as an extension's.
++COMPONENT_EXPORT(NETWORK_SERVICE)
++void MaybeCloseLoopbackPort(
++    net::HostPortPair& destination,
++    const net::NetworkAnonymizationKey& network_anonymization_key);
++
++}  // namespace network
++
++#endif  // SERVICES_NETWORK_CLOSED_LOOPBACK_PORTS_H_
+diff --git a/services/network/p2p/socket_tcp.cc b/services/network/p2p/socket_tcp.cc
+index e88d8af..261f7ce 100644
+--- a/services/network/p2p/socket_tcp.cc
++++ b/services/network/p2p/socket_tcp.cc
+@@ -24,6 +24,7 @@
+ #include "net/socket/client_socket_handle.h"
+ #include "net/socket/ssl_client_socket.h"
+ #include "net/socket/tcp_client_socket.h"
++#include "services/network/closed_loopback_ports.h"
+ #include "services/network/proxy_resolving_client_socket.h"
+ #include "services/network/proxy_resolving_client_socket_factory.h"
+ #include "services/network/public/cpp/p2p_param_traits.h"
+@@ -107,6 +108,10 @@ void P2PSocketTcpBase::Init(
+     dest_host_port_pair =
+         net::HostPortPair::FromIPEndPoint(remote_address.ip_address);
+   }
++  // AliasMode: TURN over TCP to a loopback port that
++  // --aliasmode-closed-loopback-ports lists connects to a port that refuses
++  // it, as a closed port does.
++  MaybeCloseLoopbackPort(dest_host_port_pair, network_anonymization_key);
+ 
+   // TODO(mallinath) - We are ignoring local_address altogether. We should
+   // find a way to inject this into ProxyResolvingClientSocket. This could be
+diff --git a/services/network/url_loader.cc b/services/network/url_loader.cc
+index a03063d..dc5fea5 100644
+--- a/services/network/url_loader.cc
++++ b/services/network/url_loader.cc
+@@ -87,6 +87,7 @@
+ #include "net/url_request/url_request_context_getter.h"
+ #include "net/url_request/url_request_http_transaction_factory_override.h"
+ #include "services/network/accept_ch_frame_interceptor.h"
++#include "services/network/closed_loopback_ports.h"
+ #include "services/network/cookie_settings.h"
+ #include "services/network/devtools_durable_msg_writer.h"
+ #include "services/network/file_opener_for_upload.h"
+@@ -467,8 +468,14 @@ URLLoader::URLLoader(
+   receiver_.set_disconnect_handler(
+       base::BindOnce(&URLLoader::OnMojoDisconnect, base::Unretained(this)));
+ 
++  // AliasMode: a page's request to a loopback port that
++  // --aliasmode-closed-loopback-ports lists goes to a port that refuses it,
++  // as a closed port does. The local network access prompt below still sees
++  // the URL the page asked for.
+   url_request_ = url_request_context_->CreateRequest(
+-      request.url, request.priority, this, traffic_annotation,
++      MaybeCloseLoopbackPort(request.url, request.request_initiator,
++                             GetClientSecurityState()),
++      request.priority, this, traffic_annotation,
+       factory_params_->target_network.value_or(
+           net::handles::kInvalidNetworkHandle),
+       /*is_for_websockets=*/false, request.net_log_create_info);
+diff --git a/services/network/websocket.cc b/services/network/websocket.cc
+index 016192d..3ffd449 100644
+--- a/services/network/websocket.cc
++++ b/services/network/websocket.cc
+@@ -48,6 +48,7 @@
+ #include "net/websockets/websocket_frame.h"  // for WebSocketFrameHeader::OpCode
+ #include "net/websockets/websocket_handshake_request_info.h"
+ #include "net/websockets/websocket_handshake_response_info.h"
++#include "services/network/closed_loopback_ports.h"
+ #include "services/network/local_network_access_checker.h"
+ #include "services/network/network_context.h"
+ #include "services/network/public/cpp/features.h"
+@@ -646,16 +647,22 @@ WebSocket::WebSocket(
+   handshake_client_.set_disconnect_handler(base::BindOnce(
+       &WebSocket::OnConnectionError, base::Unretained(this), FROM_HERE));
+ 
++  // AliasMode: a page's WebSocket to a loopback port that
++  // --aliasmode-closed-loopback-ports lists connects to a port that refuses
++  // it, as a closed port does.
++  const GURL channel_url =
++      MaybeCloseLoopbackPort(url, origin_, client_security_state_.get());
+   if (delay_.is_positive()) {
+     base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+         FROM_HERE,
+         base::BindOnce(&WebSocket::AddChannel, weak_ptr_factory_.GetWeakPtr(),
+-                       url, requested_protocols, storage_access_api_status,
+-                       isolation_info, std::move(additional_headers)),
++                       channel_url, requested_protocols,
++                       storage_access_api_status, isolation_info,
++                       std::move(additional_headers)),
+         delay_);
+     return;
+   }
+-  AddChannel(url, requested_protocols, storage_access_api_status,
++  AddChannel(channel_url, requested_protocols, storage_access_api_status,
+              isolation_info, std::move(additional_headers));
+ }
+ 

@@ -31,6 +31,7 @@ When the browser refuses a value, it prints `apostate: <reason>` on stderr and e
 | [`--apostate-profile`](#apostate-profile) | base64-encoded profile JSON | none |
 | [`--aliasmode-window-label`](#aliasmode-window-label) | text | none |
 | [`--aliasmode-keep-alive`](#aliasmode-keep-alive) | none | off |
+| [`--aliasmode-closed-loopback-ports`](#aliasmode-closed-loopback-ports) | ports and port ranges | none |
 
 The Python and Node packages refuse a switch that starts with `--fingerprint` and is not in this table, and a switch within two edits of one in it, such as `--fingeprint-platform`. The browser itself ignores an unknown switch, as Chromium does.
 
@@ -315,6 +316,19 @@ Keeps the browser running after its last window closes, until [`Browser.close`](
 - Works only with `--remote-debugging-port` or `--remote-debugging-pipe`. Without one of them the switch has no effect, because nothing could close the browser.
 - The browser holds the keep-alive Chromium takes for `--no-startup-window` with remote debugging. Unlike `--no-startup-window`, the startup window opens and `--restore-last-session` restores the last session as usual.
 - With no window open, the browser shows no window and no tray icon. A page cannot tell that the switch is set.
+
+## Closed local ports
+
+### `--aliasmode-closed-loopback-ports`
+
+Makes ports on this computer's loopback addresses answer a web page as closed ports do, so a page cannot find the services that listen there, such as the launcher's own.
+
+- **Value.** A comma list of ports and ranges, such as `--aliasmode-closed-loopback-ports=9222,9333-9340`. An entry that is not a port from 1 to 65535 or a range `FIRST-LAST` is logged and ignored.
+- **Default.** None. Without the switch, every port answers as in stock Chrome.
+- A page's request to a listed port on `127.0.0.1` to `127.255.255.255`, `[::1]` or `localhost` goes to a port the browser holds open and never accepts on. The operating system refuses it as it refuses any closed port, so the page gets the error and the timing of a port nothing listens on, and the service on the listed port never sees a connection.
+- It covers `fetch`, `XMLHttpRequest`, subresources, frames, CORS preflights, WebSockets and TURN over TCP and TLS.
+- It changes only requests from an `http` or `https` page on a public or local network address. Requests from the browser itself, from extensions and from pages served from loopback reach the listed ports as usual. TURN connections carry no page address, so every page's TURN connection to a listed port is refused.
+- The local network access prompt is unchanged.
 
 ## Precedence
 
