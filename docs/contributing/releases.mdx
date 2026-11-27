@@ -69,6 +69,8 @@ The repository variable `APOSTATE_BUILD_TARGETS`, a comma-separated list such as
 gh workflow run release.yml -f release_tag=v0.4.4 -f confirm=true
 ```
 
+The optional `targets` input names the platforms for that run and overrides the variable, for example `-f targets=windows-x64,linux-x64,macos-arm64,macos-x64`.
+
 The macOS build signs and notarizes when the six `APPLE_*` repository secrets are set ([Sign on macOS](/contributing/build#sign-on-macos)). Without them it publishes an unsigned macOS archive, and the job log says `sign-macos: no signing identity configured; the bundle stays unsigned`.
 
 ## What CI checks
@@ -76,7 +78,7 @@ The macOS build signs and notarizes when the six `APPLE_*` repository secrets ar
 `release.yml` runs four jobs.
 
 1. **Release gate**, on a hosted Ubuntu runner. The tag must match `vMAJOR.MINOR.PATCH` and name the checked-out commit. Then `scripts/validate-release-baseline.py --release` (the patch digests in `build/MANIFEST.lock` match the series), `scripts/test_profile_resolver.py` with `APOSTATE_REQUIRE_NATIVE_GOLDENS=1`, and the Python and Node package tests.
-2. **Setup** resolves the platforms from `APOSTATE_BUILD_TARGETS` with `scripts/resolve-build-targets.sh`.
+2. **Setup** resolves the platforms from the `targets` input or `APOSTATE_BUILD_TARGETS` with `scripts/resolve-build-targets.sh`.
 3. **Build** runs `.github/workflows/build-target.yml` once per platform: every step on [Build from source](/contributing/build#build-step-by-step) from an empty workspace, the resolver and baseline checks again, `scripts/smoke-binary.sh`, signing on macOS, packaging, upload, and a GitHub build-provenance attestation for the archive.
 4. **Publish** downloads every archive and manifest and runs `scripts/verify-release-inputs.sh`. It requires exactly one archive and one manifest per built platform, and checks each manifest's field set, its package and Chromium versions against the release policy, its `catalogue_version` and `source_revision` against the tagged commit, and its `sha256` against the archive. Then `gh release create --verify-tag --draft` creates the draft.
 

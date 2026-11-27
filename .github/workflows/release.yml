@@ -12,6 +12,11 @@ on:
         required: true
         type: boolean
         default: false
+      targets:
+        description: "Comma-separated targets to build (windows-x64,linux-x64,macos-arm64,macos-x64); empty uses the APOSTATE_BUILD_TARGETS variable"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -129,6 +134,7 @@ jobs:
       - name: Resolve target matrix
         id: resolve
         env:
+          REQUESTED_TARGETS: ${{ inputs.targets }}
           CONFIGURED_TARGETS: ${{ vars.APOSTATE_BUILD_TARGETS }}
         shell: bash
         run: bash scripts/resolve-build-targets.sh >> "$GITHUB_OUTPUT"
