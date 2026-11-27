@@ -616,19 +616,19 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 16,
-          "description": "Microphones the claimed machine has. A floor, not an exact count: real host devices are kept and the list is topped up. Readable from any page via enumerateDevices() without permission."
+          "description": "Microphones the claimed machine has. With any count present, the persona's device list replaces the host's (patch 0177): enumerateDevices() lists exactly these devices whatever the host has, and each opens a host microphone, or a synthetic one when the host has none. Readable from any page via enumerateDevices() without permission."
         },
         "videoinput_count": {
           "type": "integer",
           "minimum": 0,
           "maximum": 16,
-          "description": "Cameras the claimed machine has. Same semantics as audioinput_count."
+          "description": "Cameras the claimed machine has. Same semantics as audioinput_count: a camera opens the host camera of the same index, or the synthetic camera when no host camera is left."
         },
         "audiooutput_count": {
           "type": "integer",
           "minimum": 0,
           "maximum": 16,
-          "description": "Audio outputs the claimed machine has. Accepted and inert: unlike audioinput_count it is read by no C++, so enumerateDevices() reports the host's real speakers. Measured 1 on the macOS, Windows and stock Linux reference hosts. Evidence class: physical-ground-truth when captured, catalogue-value otherwise."
+          "description": "Audio outputs the claimed machine has. Same semantics as audioinput_count; every output plays on the host's default output, or on Chrome's silent output when the host has none. Measured 1 on the macOS, Windows and stock Linux reference hosts. Evidence class: physical-ground-truth when captured, catalogue-value otherwise."
         },
         "devices": {
           "type": "array",
@@ -660,6 +660,128 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 128
+              },
+              "facing": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "environment"
+                ],
+                "description": "videoinput only: the facingMode the camera reports. Windows reports user for a camera on the front panel, which is where a laptop's built-in camera sits. Omitted for a camera that reports none."
+              },
+              "formats": {
+                "type": "string",
+                "enum": [
+                  "hd",
+                  "fhd",
+                  "uhd"
+                ],
+                "description": "videoinput only: the camera's largest frame size, hd 1280x720, fhd 1920x1080 or uhd 3840x2160, at 30 fps. getCapabilities() and getSettings() read the sizes of this class that the host camera behind it also has. Omitted means fhd."
+              },
+              "audio": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample_rate",
+                  "channels",
+                  "buffer_frames"
+                ],
+                "description": "audioinput only: the capture format a track of this microphone reports through getSettings() (sampleRate, channelCount, and latency as buffer_frames over sample_rate). Omitted means 48000 Hz mono in 480-frame buffers.",
+                "properties": {
+                  "sample_rate": {
+                    "type": "integer",
+                    "minimum": 8000,
+                    "maximum": 384000
+                  },
+                  "channels": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 8
+                  },
+                  "buffer_frames": {
+                    "type": "integer",
+                    "minimum": 64,
+                    "maximum": 8192
+                  }
+                }
+              }
+            }
+          }
+        },
+        "spare_devices": {
+          "type": "array",
+          "description": "At most one device per kind, listed only when the claimed machine has no device of that kind and the host has one, so a persona whose machine has no microphone or camera can still use the host's. Named from the machine class rather than the host. Not counted in the *_count fields.",
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "label",
+              "group"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "audioinput",
+                  "audiooutput",
+                  "videoinput"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "group": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "facing": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "environment"
+                ],
+                "description": "videoinput only: the facingMode the camera reports. Windows reports user for a camera on the front panel, which is where a laptop's built-in camera sits. Omitted for a camera that reports none."
+              },
+              "formats": {
+                "type": "string",
+                "enum": [
+                  "hd",
+                  "fhd",
+                  "uhd"
+                ],
+                "description": "videoinput only: the camera's largest frame size, hd 1280x720, fhd 1920x1080 or uhd 3840x2160, at 30 fps. getCapabilities() and getSettings() read the sizes of this class that the host camera behind it also has. Omitted means fhd."
+              },
+              "audio": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sample_rate",
+                  "channels",
+                  "buffer_frames"
+                ],
+                "description": "audioinput only: the capture format a track of this microphone reports through getSettings() (sampleRate, channelCount, and latency as buffer_frames over sample_rate). Omitted means 48000 Hz mono in 480-frame buffers.",
+                "properties": {
+                  "sample_rate": {
+                    "type": "integer",
+                    "minimum": 8000,
+                    "maximum": 384000
+                  },
+                  "channels": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 8
+                  },
+                  "buffer_frames": {
+                    "type": "integer",
+                    "minimum": 64,
+                    "maximum": 8192
+                  }
+                }
               }
             }
           }

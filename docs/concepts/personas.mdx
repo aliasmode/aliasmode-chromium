@@ -74,7 +74,7 @@ The browser's C++ serves every row, so every API and header that reads the value
 | `prefers-color-scheme`, CSS system colours such as `Highlight` and `ButtonFace` | `theme` | Light or dark, drawn by seed. The colours are the persona's platform defaults. The 0.4.3 packages let Playwright and Patchright emulate light, and from 0.4.4 they turn that emulation off ([Known gaps](/known-gaps#prefers-color-scheme-in-the-0-4-3-packages)). |
 | `speechSynthesis.getVoices()` | `speech` | The voice table, one list per OS release and language. US and UK English have measured lists; any other language gets the US list. |
 | `AudioContext.baseLatency`, `AudioContext.sampleRate` | `audio` | The platform's output buffer size. Every persona runs at 48 kHz. |
-| `navigator.mediaDevices.enumerateDevices()` | `media` | The device table, one list per machine, with cameras, microphones and speakers and their labels. The host's own devices are listed too ([Known gaps](/known-gaps#cameras-and-microphones)). |
+| `navigator.mediaDevices.enumerateDevices()` | `media` | The device table, one list per machine, with cameras, microphones and speakers and their labels. The host's devices are not listed; each persona device opens one of them ([Known gaps](/known-gaps#cameras-and-microphones)). |
 | `MediaCapabilities` `powerEfficient` | none | The persona's GPU. |
 | `navigator.keyboard.getLayoutMap()` | none | The US layout of the persona's platform. A profile you write can carry another in `keyboard.layout_map`. |
 | `navigator.connection` (`effectiveType`, `rtt`, `downlink`, `saveData`), the `ECT`, `RTT`, `Downlink` and `Save-Data` headers | `network` | One of three 4G connections. |

@@ -14,11 +14,6 @@ import pytest
 DOCS = "https://docs.apostate.dev/known-gaps"
 
 GAPS = {
-    "host-media-devices": (
-        "A camera or microphone on the host stays listed when the persona claims none: the "
-        "persona's device counts are a floor, not an exact count.",
-        f"{DOCS}#cameras-and-microphones",
-    ),
     "apple-gpu-limits": (
         "On an Apple silicon host, a Windows or Linux persona reports the Apple GPU's value for "
         "WebGL MAX_UNIFORM_BLOCK_SIZE and for some WebGPU adapter limits and features.",

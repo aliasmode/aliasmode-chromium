@@ -99,9 +99,16 @@ WebRTC's send codecs come from the encoders the host has. Real Windows machines 
 
 ### Cameras and microphones
 
-The persona's device list is a floor, and the host's own devices are kept. On a host with a camera or microphone, `navigator.mediaDevices.enumerateDevices()` lists that kind even when the persona's machine has none, and after a permission grant a page reads the host's real device labels. A Windows persona with seed 42, whose machine has speakers only, listed the Mac's microphones, cameras and speakers by name (2026-09-27, Apostate 0.4.3, Apple silicon MacBook Pro).
+`navigator.mediaDevices.enumerateDevices()` lists the persona's microphones, cameras and speakers and none of the host's (patch 0177). Each persona device opens a host device: microphone and camera `i` open the host's device `i`, extra microphones open the host's first one, and speakers play on the host's default output. Up to 0.5.1 and AliasMode Chromium 155 build 5, the persona's list was a floor and the host's devices were listed by name. A Windows persona with seed 42, whose machine has speakers only, listed the Mac's microphones, cameras and speakers (2026-09-27, Apostate 0.4.3, Apple silicon MacBook Pro).
 
-**What to do.** Run personas on a host with no capture devices, such as a server, or disable the devices on the host.
+What is left:
+
+- The labels, camera sizes and facing modes come from the device model AliasMode Firefox uses, written in Chrome's label forms. They are not measured on Chrome.
+- A page that opens a camera sees the host camera's picture and, through `ImageCapture.takePhoto()`, its photo size.
+- A machine with no device of a kind lists one, named from its machine class, when the host has that kind. A Linux server persona has no such device, so the host's microphone and camera cannot be used.
+- A microphone reports the persona's format, 48 kHz mono unless the profile names another, and the host's microphone is converted to it. This is not yet checked on a macOS host.
+
+**What to do.** Where the picture matters, run the persona on a host with no camera, so the camera sends the synthetic picture described [below](#cameras-and-microphones-are-synthetic).
 
 ### A forced scale factor sets the pixel ratio
 
@@ -196,9 +203,9 @@ A Windows persona lists the local voices of a US or UK English install, so a per
 
 ### Cameras and microphones are synthetic
 
-A claimed camera sends a dim synthetic picture and a claimed microphone a quiet noise floor.
+On a host with no camera or microphone, a persona's camera sends a dim synthetic picture and its microphone a quiet noise floor. A persona camera beyond the host's camera count is synthetic too, because one host camera cannot be opened twice.
 
-**What to do.** Not fixed. Do not use a persona's claimed devices for real calls.
+**What to do.** For real calls, run the persona on a host with a camera and a microphone.
 
 ### Web Share on Linux
 

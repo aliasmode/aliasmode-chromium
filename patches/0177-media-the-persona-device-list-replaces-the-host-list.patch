@@ -1,0 +1,1594 @@
+Subject: [PATCH] media: the persona's device list replaces the host's
+
+enumerateDevices() lists the persona's microphones, cameras and speakers
+and nothing else. Until now the persona's counts were a floor: the
+host's devices stayed listed under their own names and groups, and only
+the shortfall was made up, so a Windows persona on a Mac listed the
+Mac's microphone by name after a permission grant.
+
+The list is the same on every host. What opens is worked out from the
+host each time: device i opens host device i, a microphone beyond the
+host's count opens the host's first one, a camera beyond it is the
+synthetic camera, since one host camera cannot be opened twice, and
+every speaker plays on the host's default output. With no host device
+of a kind, the existing synthetic devices serve. The default and, for a
+Windows persona, communications entries carry the persona's first
+device and open the host's default.
+
+A persona whose machine has no microphone or no camera lists one, named
+from its machine class, when the host has one, so calls keep working.
+
+An open track agrees with the list: its label is the persona's, a
+microphone reports the persona's sample rate, channels and buffer, and
+a camera offers the sizes of its persona class that the host camera
+has, at up to 30 fps, with no pan, tilt or zoom and the persona's
+photo state.
+
+diff --git a/base/apostate/media_devices.cc b/base/apostate/media_devices.cc
+index d9faa29..7744c90 100644
+--- a/base/apostate/media_devices.cc
++++ b/base/apostate/media_devices.cc
+@@ -8,6 +8,7 @@
+ 
+ #include "base/apostate/profile.h"
+ #include "base/hash/hash.h"
++#include "base/notreached.h"
+ #include "base/strings/strcat.h"
+ #include "base/strings/string_number_conversions.h"
+ 
+@@ -19,100 +20,180 @@ constexpr char kAudioInputPrefix[] = "apostate-audioinput-";
+ constexpr char kAudioOutputPrefix[] = "apostate-audiooutput-";
+ constexpr char kVideoInputPrefix[] = "apostate-videoinput-";
+ 
+-// A device the profile claims but does not name gets no label, and a device it
+-// names beyond the first of its kind gets the catalogue label with an index.
+-// Two identical built-in cameras on one machine is not a case the catalogue
+-// describes, and inventing a second vendor string would be inventing evidence.
+-std::string LabelForIndex(const std::vector<Profile::MediaDevice>& devices,
+-                          std::string_view kind,
+-                          size_t index) {
+-  size_t seen = 0;
+-  std::string last;
+-  for (const auto& device : devices) {
+-    if (device.kind != kind) {
+-      continue;
+-    }
+-    if (seen == index) {
+-      return device.label;
+-    }
+-    last = device.label;
+-    ++seen;
++std::string_view KindName(MediaDeviceKind kind) {
++  switch (kind) {
++    case MediaDeviceKind::kAudioInput:
++      return "audioinput";
++    case MediaDeviceKind::kAudioOutput:
++      return "audiooutput";
++    case MediaDeviceKind::kVideoInput:
++      return "videoinput";
+   }
+-  if (last.empty()) {
+-    return std::string();
++  NOTREACHED();
++}
++
++std::string_view Prefix(MediaDeviceKind kind) {
++  switch (kind) {
++    case MediaDeviceKind::kAudioInput:
++      return kAudioInputPrefix;
++    case MediaDeviceKind::kAudioOutput:
++      return kAudioOutputPrefix;
++    case MediaDeviceKind::kVideoInput:
++      return kVideoInputPrefix;
+   }
+-  return StrCat({last, " (", NumberToString(index - seen + 2), ")"});
++  NOTREACHED();
+ }
+ 
+-// The pairing key, not the label. Devices the profile puts in one group get one
+-// group id, so a page pairing a microphone with a camera sees what the profile
+-// claims. Namespaced so it cannot equal a platform group id.
+-std::string GroupForIndex(const std::vector<Profile::MediaDevice>& devices,
+-                          std::string_view kind,
+-                          size_t index,
+-                          std::string_view fallback_prefix) {
+-  size_t seen = 0;
++std::optional<int> Count(const Profile& profile, MediaDeviceKind kind) {
++  switch (kind) {
++    case MediaDeviceKind::kAudioInput:
++      return profile.media_audioinput_count();
++    case MediaDeviceKind::kAudioOutput:
++      return profile.media_audiooutput_count();
++    case MediaDeviceKind::kVideoInput:
++      return profile.media_videoinput_count();
++  }
++  NOTREACHED();
++}
++
++// The entries of one kind, in catalogue order.
++std::vector<const Profile::MediaDevice*> OfKind(
++    const std::vector<Profile::MediaDevice>& devices,
++    std::string_view kind) {
++  std::vector<const Profile::MediaDevice*> result;
+   for (const auto& device : devices) {
+-    if (device.kind != kind) {
+-      continue;
+-    }
+-    if (seen == index) {
+-      return StrCat({"apostate-group-", device.group});
++    if (device.kind == kind) {
++      result.push_back(&device);
+     }
+-    ++seen;
+   }
+-  return StrCat({fallback_prefix, NumberToString(index), "-group"});
++  return result;
+ }
+ 
+-std::vector<SyntheticMediaDevice> Build(const Profile& profile,
+-                                        std::optional<int> wanted,
+-                                        std::string_view kind,
+-                                        std::string_view prefix,
+-                                        size_t host_device_count) {
+-  std::vector<SyntheticMediaDevice> result;
+-  if (!wanted.has_value() || *wanted <= 0) {
+-    return result;
++// A device the profile counts but does not name gets no label, and a device
++// beyond the named ones gets the last catalogue label with an index. Two
++// identical built-in cameras on one machine is not a case the catalogue
++// describes, and inventing a second vendor string would be inventing evidence.
++std::string LabelForIndex(const std::vector<const Profile::MediaDevice*>& named,
++                          size_t index) {
++  if (index < named.size()) {
++    return named[index]->label;
+   }
+-  const size_t claimed = static_cast<size_t>(*wanted);
+-  for (size_t i = host_device_count; i < claimed; ++i) {
+-    result.push_back(SyntheticMediaDevice{
+-        StrCat({prefix, NumberToString(i)}),
+-        LabelForIndex(profile.media_devices(), kind, i),
+-        GroupForIndex(profile.media_devices(), kind, i, prefix)});
++  if (named.empty()) {
++    return std::string();
++  }
++  return StrCat({named.back()->label, " (",
++                 NumberToString(index - named.size() + 2), ")"});
++}
++
++void ApplySizeClass(std::string_view formats, PersonaMediaDevice* device) {
++  if (formats == "hd") {
++    device->max_width = 1280;
++    device->max_height = 720;
++  } else if (formats == "uhd") {
++    device->max_width = 3840;
++    device->max_height = 2160;
++  } else {
++    device->max_width = 1920;
++    device->max_height = 1080;
+   }
+-  return result;
+ }
+ 
+ }  // namespace
+ 
+-std::vector<SyntheticMediaDevice> SyntheticAudioInputDevices(
+-    size_t host_device_count) {
++PersonaMediaDevice::PersonaMediaDevice() = default;
++PersonaMediaDevice::PersonaMediaDevice(const PersonaMediaDevice&) = default;
++PersonaMediaDevice& PersonaMediaDevice::operator=(const PersonaMediaDevice&) =
++    default;
++PersonaMediaDevice::~PersonaMediaDevice() = default;
++
++bool PersonaOwnsDevices(MediaDeviceKind kind) {
+   const Profile* profile = Profile::Get();
+-  if (!profile) {
+-    return {};
+-  }
+-  return Build(*profile, profile->media_audioinput_count(), "audioinput",
+-               kAudioInputPrefix, host_device_count);
++  return profile && Count(*profile, kind).has_value();
+ }
+ 
+-std::vector<SyntheticMediaDevice> SyntheticAudioOutputDevices(
+-    size_t host_device_count) {
++std::vector<PersonaMediaDevice> PersonaDevices(MediaDeviceKind kind,
++                                               size_t host_device_count) {
++  std::vector<PersonaMediaDevice> result;
+   const Profile* profile = Profile::Get();
+   if (!profile) {
+-    return {};
++    return result;
++  }
++  const std::optional<int> count = Count(*profile, kind);
++  if (!count.has_value() || *count < 0) {
++    return result;
++  }
++
++  const std::string_view kind_name = KindName(kind);
++  std::vector<const Profile::MediaDevice*> named =
++      OfKind(profile->media_devices(), kind_name);
++  size_t wanted = static_cast<size_t>(*count);
++  if (wanted == 0 && host_device_count > 0) {
++    named = OfKind(profile->media_spare_devices(), kind_name);
++    wanted = std::min<size_t>(named.size(), 1);
+   }
+-  return Build(*profile, profile->media_audiooutput_count(), "audiooutput",
+-               kAudioOutputPrefix, host_device_count);
++
++  const std::string_view prefix = Prefix(kind);
++  for (size_t i = 0; i < wanted; ++i) {
++    PersonaMediaDevice device;
++    device.id = StrCat({prefix, NumberToString(i)});
++    device.label = LabelForIndex(named, i);
++    // The pairing key, not the label. Namespaced so it cannot equal a
++    // platform group id.
++    device.group_id = i < named.size()
++                          ? StrCat({"apostate-group-", named[i]->group})
++                          : StrCat({prefix, NumberToString(i), "-group"});
++
++    const Profile::MediaDevice* entry = i < named.size() ? named[i] : nullptr;
++    if (entry) {
++      device.facing = entry->facing;
++      if (entry->sample_rate > 0) {
++        device.sample_rate = entry->sample_rate;
++        device.channels = entry->channels;
++        device.buffer_frames = entry->buffer_frames;
++      }
++    }
++    ApplySizeClass(entry ? std::string_view(entry->formats) : "", &device);
++
++    if (host_device_count > 0) {
++      switch (kind) {
++        case MediaDeviceKind::kAudioInput:
++          device.route = MediaDeviceRoute::kHostDevice;
++          device.host_index = i < host_device_count ? i : 0;
++          break;
++        case MediaDeviceKind::kAudioOutput:
++          device.route = MediaDeviceRoute::kHostDefault;
++          break;
++        case MediaDeviceKind::kVideoInput:
++          if (i < host_device_count) {
++            device.route = MediaDeviceRoute::kHostDevice;
++            device.host_index = i;
++          }
++          break;
++      }
++    }
++    result.push_back(std::move(device));
++  }
++  return result;
+ }
+ 
+-std::vector<SyntheticMediaDevice> SyntheticVideoInputDevices(
+-    size_t host_device_count) {
+-  const Profile* profile = Profile::Get();
+-  if (!profile) {
+-    return {};
++std::optional<PersonaMediaDevice> ResolveRoute(std::string_view raw_id,
++                                               size_t host_device_count) {
++  MediaDeviceKind kind;
++  if (IsSyntheticAudioInputId(raw_id)) {
++    kind = MediaDeviceKind::kAudioInput;
++  } else if (IsSyntheticAudioOutputId(raw_id)) {
++    kind = MediaDeviceKind::kAudioOutput;
++  } else if (IsSyntheticVideoInputId(raw_id)) {
++    kind = MediaDeviceKind::kVideoInput;
++  } else {
++    return std::nullopt;
++  }
++  for (PersonaMediaDevice& device : PersonaDevices(kind, host_device_count)) {
++    if (device.id == raw_id) {
++      return std::move(device);
++    }
+   }
+-  return Build(*profile, profile->media_videoinput_count(), "videoinput",
+-               kVideoInputPrefix, host_device_count);
++  return std::nullopt;
+ }
+ 
+ bool IsSyntheticAudioInputId(std::string_view id) {
+diff --git a/base/apostate/media_devices.h b/base/apostate/media_devices.h
+index 708d6da..e9f39c4 100644
+--- a/base/apostate/media_devices.h
++++ b/base/apostate/media_devices.h
+@@ -8,6 +8,7 @@
+ #include <stddef.h>
+ #include <stdint.h>
+ 
++#include <optional>
+ #include <string>
+ #include <string_view>
+ #include <vector>
+@@ -16,55 +17,108 @@
+ 
+ namespace base::apostate {
+ 
+-// A device the profile claims and the host does not have.
++enum class MediaDeviceKind { kAudioInput, kAudioOutput, kVideoInput };
++
++// What opens when a page opens a device of the persona's machine.
++enum class MediaDeviceRoute {
++  // No host device of the kind exists: the synthetic camera, the room-tone
++  // microphone, or the hardware-less output.
++  kSynthetic,
++  // The host device at `host_index` in the host's own enumeration order.
++  kHostDevice,
++  // The host's default device of the kind. Speakers route here, so sound
++  // plays wherever the host's user has chosen to hear it.
++  kHostDefault,
++};
++
++// The format a microphone of the persona reports unless its profile entry
++// names another.
++//
++// A page reads all three: sampleRate and channelCount directly from
++// MediaStreamTrack.getSettings(), and latency as frames over rate. They are
++// fixed rather than taken from the host, because the device is not the host's
++// and a claimed microphone that inherits the host's odd rate says so. 48 kHz
++// mono at 10 ms is what every built-in laptop microphone Chromium opens
++// reports, and is what the macOS reference host measured.
++inline constexpr int kSyntheticAudioInputSampleRate = 48000;
++inline constexpr int kSyntheticAudioInputChannels = 1;
++inline constexpr int kSyntheticAudioInputBufferFrames =
++    kSyntheticAudioInputSampleRate / 100;
++
++// A device of the persona's machine, as the lowest layer lists it.
+ //
+ // The identifiers are raw: MediaDevicesDispatcherHost replaces both with a
+ // per-origin HMAC before either reaches a renderer, so neither string is
+ // observable and neither needs to imitate a platform's naming. The label is
+ // observable once a capture permission is granted, which is why it comes from
+ // the profile's topology rather than from this file.
+-struct BASE_EXPORT SyntheticMediaDevice {
++struct BASE_EXPORT PersonaMediaDevice {
++  PersonaMediaDevice();
++  PersonaMediaDevice(const PersonaMediaDevice&);
++  PersonaMediaDevice& operator=(const PersonaMediaDevice&);
++  ~PersonaMediaDevice();
++
+   std::string id;
+   std::string label;
+   // Devices sharing a profile `group` share this, so a page that pairs a
+   // microphone with a camera by groupId sees the pairing the profile claims.
+   std::string group_id;
++
++  MediaDeviceRoute route = MediaDeviceRoute::kSynthetic;
++  size_t host_index = 0;
++
++  // Cameras: "user", "environment" or empty, and the largest frame size the
++  // camera offers.
++  std::string facing;
++  int max_width = 1920;
++  int max_height = 1080;
++
++  // Microphones: the capture format a track reports.
++  int sample_rate = kSyntheticAudioInputSampleRate;
++  int channels = kSyntheticAudioInputChannels;
++  int buffer_frames = kSyntheticAudioInputBufferFrames;
+ };
+ 
+-// The devices to append when the host already reports `host_device_count` of
+-// that kind. Empty when no profile is configured, when the profile carries no
+-// count, or when the host already has at least as many as the profile claims.
++// Whether the profile decides the devices of `kind`: true when it carries a
++// count for that kind. Then the persona's list replaces the host's at the
++// lowest layer, and no host label, group or count reaches a page. Without a
++// profile, or with a profile that names no count, the host's list stands.
++BASE_EXPORT bool PersonaOwnsDevices(MediaDeviceKind kind);
++
++// The persona's devices of `kind` on a host that has `host_device_count`
++// devices of that kind, virtual default and communications entries not
++// counted. Empty when PersonaOwnsDevices(kind) is false.
+ //
+-// The profile sets a floor rather than an exact count for the reason patch 0020
+-// gives: removing a device a machine really has, to make a number match, breaks
+-// capture on a machine that can actually capture.
+-BASE_EXPORT std::vector<SyntheticMediaDevice> SyntheticAudioInputDevices(
++// The list is the same whatever the host has, so plugging a device in or out
++// never changes what a page enumerates. Only the routing follows the host,
++// and it is recomputed from the count on every call:
++//   * device i opens host device i while the host has one;
++//   * a microphone beyond the host's count opens host microphone 0;
++//   * a camera beyond the host's count is the synthetic camera, because one
++//     host camera cannot be opened twice;
++//   * every speaker plays on the host's default output;
++//   * with no host device of the kind, every device is synthetic.
++// A persona whose machine has no device of a kind still lists one, from the
++// profile's spare devices, when the host has that kind, so a call placed from
++// that persona can use the host's microphone or camera.
++BASE_EXPORT std::vector<PersonaMediaDevice> PersonaDevices(
++    MediaDeviceKind kind,
+     size_t host_device_count);
+-BASE_EXPORT std::vector<SyntheticMediaDevice> SyntheticAudioOutputDevices(
+-    size_t host_device_count);
+-BASE_EXPORT std::vector<SyntheticMediaDevice> SyntheticVideoInputDevices(
++
++// The device PersonaDevices() lists under the raw identifier `raw_id`, routed
++// for a host with `host_device_count` devices of its kind. nullopt for an
++// identifier that names no persona device.
++BASE_EXPORT std::optional<PersonaMediaDevice> ResolveRoute(
++    std::string_view raw_id,
+     size_t host_device_count);
+ 
+-// Whether an identifier names one of the devices above. The prefixes are
+-// namespaced so they cannot collide with a platform identifier, and none is
+-// "default" or "communications", which are special-cased downstream.
++// Whether an identifier names a persona device. The prefixes are namespaced
++// so they cannot collide with a platform identifier, and none is "default" or
++// "communications", which are special-cased downstream.
+ BASE_EXPORT bool IsSyntheticAudioInputId(std::string_view id);
+ BASE_EXPORT bool IsSyntheticAudioOutputId(std::string_view id);
+ BASE_EXPORT bool IsSyntheticVideoInputId(std::string_view id);
+ 
+-// The format a synthetic microphone reports and delivers.
+-//
+-// A page reads all three: sampleRate and channelCount directly from
+-// MediaStreamTrack.getSettings(), and latency as frames over rate. They are
+-// fixed rather than taken from the host, because the device is not the host's
+-// and a claimed microphone that inherits the host's odd rate says so. 48 kHz
+-// mono at 10 ms is what every built-in laptop microphone Chromium opens
+-// reports, and is what the macOS reference host measured.
+-inline constexpr int kSyntheticAudioInputSampleRate = 48000;
+-inline constexpr int kSyntheticAudioInputChannels = 1;
+-inline constexpr int kSyntheticAudioInputBufferFrames =
+-    kSyntheticAudioInputSampleRate / 100;
+-
+ // A stable 64-bit value for a synthetic device, derived from the profile
+ // identity and the device identifier.
+ //
+diff --git a/base/apostate/profile.cc b/base/apostate/profile.cc
+index a2fc1c6..fadce24 100644
+--- a/base/apostate/profile.cc
++++ b/base/apostate/profile.cc
+@@ -202,6 +202,12 @@ const std::optional<ProxyCredentials>& AdoptedProxyCredentials() {
+ Profile::Profile() = default;
+ Profile::~Profile() = default;
+ 
++Profile::MediaDevice::MediaDevice() = default;
++Profile::MediaDevice::MediaDevice(const MediaDevice&) = default;
++Profile::MediaDevice& Profile::MediaDevice::operator=(const MediaDevice&) =
++    default;
++Profile::MediaDevice::~MediaDevice() = default;
++
+ // static
+ const Profile* Profile::Get() {
+   if (g_profile_for_testing) {
+@@ -973,11 +979,17 @@ Profile* Profile::ParseOrNull(const std::string& encoded) {
+     // claimed platform. The compositor already selects them from the
+     // media_topology catalogue, where a Realtek codec string is a Windows
+     // artifact and is not selectable on macOS. Nothing read them before this.
+-    if (const ListValue* devices = media->FindList("devices")) {
+-      for (const auto& entry : *devices) {
++    //
++    // A device may also say what an open track reports: a camera its facing
++    // mode and size class, a microphone its capture format. Enumeration and
++    // capture both answer from this list, so a page that compares the label,
++    // the capabilities and the settings of one track sees one device.
++    const auto parse_devices = [](const ListValue& entries,
++                                  std::vector<Profile::MediaDevice>* sink) {
++      for (const auto& entry : entries) {
+         const DictValue* device = entry.GetIfDict();
+         if (!device) {
+-          LOG(ERROR) << "apostate: media.devices entries must be objects; "
++          LOG(ERROR) << "apostate: media device entries must be objects; "
+                      << "ignoring";
+           continue;
+         }
+@@ -988,17 +1000,62 @@ Profile* Profile::ParseOrNull(const std::string& encoded) {
+             label->size() > 256 || group->empty() || group->size() > 128 ||
+             (*kind != "audioinput" && *kind != "audiooutput" &&
+              *kind != "videoinput")) {
+-          LOG(ERROR) << "apostate: malformed media.devices entry; ignoring";
++          LOG(ERROR) << "apostate: malformed media device entry; ignoring";
+           continue;
+         }
+-        if (profile->media_devices_.size() >= 48) {
+-          LOG(ERROR) << "apostate: media.devices holds more than 48 entries; "
+-                     << "ignoring the rest";
++        if (sink->size() >= 48) {
++          LOG(ERROR) << "apostate: a media device list holds more than 48 "
++                     << "entries; ignoring the rest";
+           break;
+         }
+-        profile->media_devices_.push_back(
+-            Profile::MediaDevice{*kind, *label, *group});
++        Profile::MediaDevice parsed;
++        parsed.kind = *kind;
++        parsed.label = *label;
++        parsed.group = *group;
++        if (const std::string* facing = device->FindString("facing")) {
++          if (*kind == "videoinput" &&
++              (*facing == "user" || *facing == "environment")) {
++            parsed.facing = *facing;
++          } else {
++            LOG(ERROR) << "apostate: media device facing must be user or "
++                       << "environment on a videoinput; ignoring";
++          }
++        }
++        if (const std::string* formats = device->FindString("formats")) {
++          if (*kind == "videoinput" &&
++              (*formats == "hd" || *formats == "fhd" || *formats == "uhd")) {
++            parsed.formats = *formats;
++          } else {
++            LOG(ERROR) << "apostate: media device formats must be hd, fhd or "
++                       << "uhd on a videoinput; ignoring";
++          }
++        }
++        if (const DictValue* audio = device->FindDict("audio")) {
++          const std::optional<int> rate = audio->FindInt("sample_rate");
++          const std::optional<int> channels = audio->FindInt("channels");
++          const std::optional<int> frames = audio->FindInt("buffer_frames");
++          // Wide enough for any real microphone, narrow enough that a
++          // malformed profile cannot ask for a stream no backend opens.
++          if (*kind == "audioinput" && rate && channels && frames &&
++              *rate >= 8000 && *rate <= 384000 && *channels >= 1 &&
++              *channels <= 8 && *frames >= 64 && *frames <= 8192) {
++            parsed.sample_rate = *rate;
++            parsed.channels = *channels;
++            parsed.buffer_frames = *frames;
++          } else {
++            LOG(ERROR) << "apostate: media device audio must carry "
++                       << "sample_rate, channels and buffer_frames in range "
++                       << "on an audioinput; ignoring";
++          }
++        }
++        sink->push_back(std::move(parsed));
+       }
++    };
++    if (const ListValue* devices = media->FindList("devices")) {
++      parse_devices(*devices, &profile->media_devices_);
++    }
++    if (const ListValue* spares = media->FindList("spare_devices")) {
++      parse_devices(*spares, &profile->media_spare_devices_);
+     }
+   }
+ 
+diff --git a/base/apostate/profile.h b/base/apostate/profile.h
+index fa36c44..a6d6e33 100644
+--- a/base/apostate/profile.h
++++ b/base/apostate/profile.h
+@@ -415,21 +415,46 @@ class BASE_EXPORT Profile {
+   //
+   // `group` is a pairing key rather than a groupId: entries sharing it are one
+   // physical device, and the emitter gives them the same per-origin groupId.
+-  // The label is the only field a page can read, and only after a capture
+-  // permission is granted.
+-  struct MediaDevice {
++  // The label is readable once a capture permission is granted; the other
++  // fields are what an open track reports.
++  struct BASE_EXPORT MediaDevice {
++    MediaDevice();
++    MediaDevice(const MediaDevice&);
++    MediaDevice& operator=(const MediaDevice&);
++    ~MediaDevice();
++
+     std::string kind;
+     std::string label;
+     std::string group;
++    // Cameras: the facingMode the camera reports, "user" or "environment".
++    // Empty for a camera that reports none, which is every external webcam.
++    std::string facing;
++    // Cameras: the largest size class the camera offers, "hd" (1280x720),
++    // "fhd" (1920x1080) or "uhd" (3840x2160). Empty means "fhd".
++    std::string formats;
++    // Microphones: the capture format getSettings() reports. Zero means the
++    // default, 48 kHz mono in 10 ms buffers.
++    int sample_rate = 0;
++    int channels = 0;
++    int buffer_frames = 0;
+   };
+ 
+   // The claimed topology, in catalogue order. Empty means the profile named
+-  // counts without naming devices, in which case a synthesised device carries
+-  // no label — the same thing a page sees before a permission is granted.
++  // counts without naming devices, in which case a claimed device carries no
++  // label — the same thing a page sees before a permission is granted.
+   const std::vector<MediaDevice>& media_devices() const {
+     return media_devices_;
+   }
+ 
++  // At most one device per kind, listed only when the claimed machine has no
++  // device of that kind and the host has one. A persona with no microphone on
++  // a host with one would otherwise hide the host's microphone and break
++  // every call; this is the device the persona shows instead, named from its
++  // own machine class rather than from the host.
++  const std::vector<MediaDevice>& media_spare_devices() const {
++    return media_spare_devices_;
++  }
++
+   // navigator.keyboard.getLayoutMap(), replayed from the capture.
+   //
+   // This is a user setting rather than a device property — the same Mac gives a
+@@ -811,6 +836,7 @@ class BASE_EXPORT Profile {
+   std::optional<int> media_audiooutput_count_;
+   std::optional<int> media_videoinput_count_;
+   std::vector<MediaDevice> media_devices_;
++  std::vector<MediaDevice> media_spare_devices_;
+   std::map<std::string, std::string> keyboard_layout_map_;
+   std::map<std::string, int64_t> gl_limits_;
+   std::map<std::string, double> gl_limits_fractional_;
+diff --git a/base/apostate/profile_unittest.cc b/base/apostate/profile_unittest.cc
+index 4addbc2..8a67900 100644
+--- a/base/apostate/profile_unittest.cc
++++ b/base/apostate/profile_unittest.cc
+@@ -5,10 +5,12 @@
+ #include "base/apostate/profile.h"
+ 
+ #include <array>
++#include <memory>
+ #include <optional>
+ #include <string>
+ #include <string_view>
+ 
++#include "base/apostate/media_devices.h"
+ #include "base/base64.h"
+ #include "base/base_switches.h"
+ #include "base/command_line.h"
+@@ -555,5 +557,140 @@ TEST(ApostateProxyCredentialsTest, AdoptionEmptiesASuppliedEnvelope) {
+   Profile::AdoptLaunchProxyCredentials();
+ }
+ 
++}  // namespace
++
++// ParseOrNull is private; the device list is read from a parsed profile.
++class ProfileTestPeer {
++ public:
++  static std::unique_ptr<Profile> Parse(std::string_view json) {
++    return std::unique_ptr<Profile>(Profile::ParseOrNull(Base64Encode(json)));
++  }
++};
++
++namespace {
++
++// The persona's devices replace the host's, whatever the host has. Only the
++// routing follows the host: device i opens host device i, a microphone beyond
++// the host's count opens host microphone 0, a camera beyond it is synthetic,
++// and speakers play on the host's default output.
++class ApostatePersonaDevicesTest : public testing::Test {
++ protected:
++  void Use(std::string_view json) {
++    profile_ = ProfileTestPeer::Parse(json);
++    ASSERT_TRUE(profile_);
++    Profile::SetForTesting(profile_.get());
++  }
++  void TearDown() override { Profile::SetForTesting(nullptr); }
++
++ private:
++  std::unique_ptr<Profile> profile_;
++};
++
++constexpr char kTwoMicrophonesOneCamera[] =
++    R"({"media":{"audioinput_count":2,"audiooutput_count":1,)"
++    R"("videoinput_count":1,"devices":[)"
++    R"({"kind":"audioinput","label":"Microphone Array (Realtek(R) Audio)",)"
++    R"("group":"card","audio":{"sample_rate":44100,"channels":2,)"
++    R"("buffer_frames":441}},)"
++    R"({"kind":"audioinput","label":"Microphone (HD Pro Webcam C920)",)"
++    R"("group":"c920"},)"
++    R"({"kind":"audiooutput","label":"Speakers (Realtek(R) Audio)",)"
++    R"("group":"card"},)"
++    R"({"kind":"videoinput","label":"HD Pro Webcam C920 (046d:082d)",)"
++    R"("group":"c920","facing":"user","formats":"hd"}]}})";
++
++TEST_F(ApostatePersonaDevicesTest, ThePersonaListIsTheSameOnEveryHost) {
++  Use(kTwoMicrophonesOneCamera);
++  for (size_t host = 0; host < 4; ++host) {
++    const std::vector<PersonaMediaDevice> microphones =
++        PersonaDevices(MediaDeviceKind::kAudioInput, host);
++    ASSERT_EQ(2u, microphones.size());
++    EXPECT_EQ("apostate-audioinput-0", microphones[0].id);
++    EXPECT_EQ("Microphone Array (Realtek(R) Audio)", microphones[0].label);
++    EXPECT_EQ("apostate-group-card", microphones[0].group_id);
++    EXPECT_EQ("apostate-audioinput-1", microphones[1].id);
++    EXPECT_EQ("Microphone (HD Pro Webcam C920)", microphones[1].label);
++    EXPECT_EQ("apostate-group-c920", microphones[1].group_id);
++  }
++}
++
++TEST_F(ApostatePersonaDevicesTest, RoutesFollowTheHost) {
++  Use(kTwoMicrophonesOneCamera);
++
++  std::vector<PersonaMediaDevice> microphones =
++      PersonaDevices(MediaDeviceKind::kAudioInput, 3);
++  EXPECT_EQ(MediaDeviceRoute::kHostDevice, microphones[0].route);
++  EXPECT_EQ(0u, microphones[0].host_index);
++  EXPECT_EQ(MediaDeviceRoute::kHostDevice, microphones[1].route);
++  EXPECT_EQ(1u, microphones[1].host_index);
++
++  microphones = PersonaDevices(MediaDeviceKind::kAudioInput, 1);
++  EXPECT_EQ(MediaDeviceRoute::kHostDevice, microphones[1].route);
++  EXPECT_EQ(0u, microphones[1].host_index);
++
++  microphones = PersonaDevices(MediaDeviceKind::kAudioInput, 0);
++  EXPECT_EQ(MediaDeviceRoute::kSynthetic, microphones[0].route);
++  EXPECT_EQ(MediaDeviceRoute::kSynthetic, microphones[1].route);
++
++  EXPECT_EQ(MediaDeviceRoute::kHostDefault,
++            PersonaDevices(MediaDeviceKind::kAudioOutput, 2)[0].route);
++  EXPECT_EQ(MediaDeviceRoute::kSynthetic,
++            PersonaDevices(MediaDeviceKind::kAudioOutput, 0)[0].route);
++
++  EXPECT_EQ(MediaDeviceRoute::kHostDevice,
++            PersonaDevices(MediaDeviceKind::kVideoInput, 2)[0].route);
++  EXPECT_EQ(MediaDeviceRoute::kSynthetic,
++            PersonaDevices(MediaDeviceKind::kVideoInput, 0)[0].route);
++
++  const std::optional<PersonaMediaDevice> second =
++      ResolveRoute("apostate-audioinput-1", 1);
++  ASSERT_TRUE(second);
++  EXPECT_EQ(MediaDeviceRoute::kHostDevice, second->route);
++  EXPECT_EQ(0u, second->host_index);
++  EXPECT_FALSE(ResolveRoute("apostate-audioinput-2", 1));
++  EXPECT_FALSE(ResolveRoute("default", 1));
++}
++
++TEST_F(ApostatePersonaDevicesTest, ATrackReportsThePersonaDevice) {
++  Use(kTwoMicrophonesOneCamera);
++  const std::vector<PersonaMediaDevice> microphones =
++      PersonaDevices(MediaDeviceKind::kAudioInput, 1);
++  EXPECT_EQ(44100, microphones[0].sample_rate);
++  EXPECT_EQ(2, microphones[0].channels);
++  EXPECT_EQ(441, microphones[0].buffer_frames);
++  EXPECT_EQ(kSyntheticAudioInputSampleRate, microphones[1].sample_rate);
++  EXPECT_EQ(kSyntheticAudioInputChannels, microphones[1].channels);
++
++  const PersonaMediaDevice camera =
++      PersonaDevices(MediaDeviceKind::kVideoInput, 1)[0];
++  EXPECT_EQ("HD Pro Webcam C920 (046d:082d)", camera.label);
++  EXPECT_EQ("user", camera.facing);
++  EXPECT_EQ(1280, camera.max_width);
++  EXPECT_EQ(720, camera.max_height);
++}
++
++TEST_F(ApostatePersonaDevicesTest, ASpareDeviceKeepsTheHostsUsable) {
++  Use(R"({"media":{"audioinput_count":0,"audiooutput_count":1,)"
++      R"("videoinput_count":0,"devices":[)"
++      R"({"kind":"audiooutput","label":"Mac mini Speakers","group":"b"}],)"
++      R"("spare_devices":[)"
++      R"({"kind":"videoinput","label":"FaceTime HD Camera","group":"c"}]}})");
++  EXPECT_TRUE(PersonaDevices(MediaDeviceKind::kVideoInput, 0).empty());
++  const std::vector<PersonaMediaDevice> cameras =
++      PersonaDevices(MediaDeviceKind::kVideoInput, 2);
++  ASSERT_EQ(1u, cameras.size());
++  EXPECT_EQ("FaceTime HD Camera", cameras[0].label);
++  EXPECT_EQ(MediaDeviceRoute::kHostDevice, cameras[0].route);
++  // No spare microphone is named, so the host's stays hidden.
++  EXPECT_TRUE(PersonaDevices(MediaDeviceKind::kAudioInput, 1).empty());
++  EXPECT_TRUE(PersonaOwnsDevices(MediaDeviceKind::kAudioInput));
++}
++
++TEST_F(ApostatePersonaDevicesTest, WithoutACountTheHostListStands) {
++  Use(R"({"screen":{"width":1710}})");
++  EXPECT_FALSE(PersonaOwnsDevices(MediaDeviceKind::kVideoInput));
++  EXPECT_TRUE(PersonaDevices(MediaDeviceKind::kVideoInput, 1).empty());
++}
++
+ }  // namespace
+ }  // namespace base::apostate
+diff --git a/media/audio/audio_manager_base.cc b/media/audio/audio_manager_base.cc
+index 9ba4239..b306b51 100644
+--- a/media/audio/audio_manager_base.cc
++++ b/media/audio/audio_manager_base.cc
+@@ -311,68 +311,68 @@ void AudioManagerBase::LogAudioManagerStartup() {
+ 
+ namespace {
+ 
+-// Devices of one kind the profile claims and the host does not have:
+-// microphones, and speakers.
++// The host's own devices, without the virtual default and communications
++// entries, which are not hardware.
++size_t CountHostDevices(const AudioDeviceDescriptions& descriptions) {
++  return static_cast<size_t>(std::ranges::count_if(
++      descriptions, [](const AudioDeviceDescription& description) {
++        return !AudioDeviceDescription::IsDefaultDevice(
++                   description.unique_id) &&
++               !AudioDeviceDescription::IsCommunicationsDevice(
++                   description.unique_id);
++      }));
++}
++
++// Replaces the host's devices of one kind with the persona's: microphones, or
++// speakers.
+ //
+ // Here, rather than where enumerateDevices() answers, because this is the list
+ // the audio service itself works from: the same descriptions feed the
+ // browser's device cache, device-change notifications and the parameters
+ // lookup that runs before a stream is opened. A device added above this layer
+ // is a device the audio service has never heard of, which is how a device can
+-// enumerate and then fail to open.
+-void AppendProfileDevices(
+-    AudioDeviceDescriptions* descriptions,
+-    std::vector<base::apostate::SyntheticMediaDevice> (*synthesise)(size_t)) {
+-  // The virtual "default" and "communications" entries are not hardware, so
+-  // they do not count towards what the host really has.
+-  size_t host_devices = 0;
+-  for (const auto& description : *descriptions) {
+-    if (!AudioDeviceDescription::IsDefaultDevice(description.unique_id) &&
+-        !AudioDeviceDescription::IsCommunicationsDevice(description.unique_id)) {
+-      ++host_devices;
+-    }
++// enumerate and then fail to open. Replacing rather than adding is what keeps
++// the host's own device names and groupings out of every page: the persona's
++// devices open the host's hardware, but under their own names.
++void ReplaceWithPersonaDevices(AudioDeviceDescriptions* descriptions,
++                               base::apostate::MediaDeviceKind kind) {
++  if (!base::apostate::PersonaOwnsDevices(kind)) {
++    return;
+   }
+-
+-  const std::vector<base::apostate::SyntheticMediaDevice> synthetic =
+-      synthesise(host_devices);
+-  if (synthetic.empty()) {
++  const std::vector<base::apostate::PersonaMediaDevice> persona =
++      base::apostate::PersonaDevices(kind, CountHostDevices(*descriptions));
++  descriptions->clear();
++  if (persona.empty()) {
+     return;
+   }
+ 
+   // A machine with a device of this kind also enumerates a virtual default
+   // entry pointing at it, and Windows adds a virtual communications entry
+   // beside it (AudioManagerWin::GetAudioDeviceNamesImpl); a machine with none
+-  // enumerates nothing at all. If the host is the second kind and the profile
+-  // claims the first, the virtual entries have to come too, in the claimed
+-  // platform's shape, or the claimed machine is one whose device the
+-  // operating system does not consider a device.
+-  const bool host_had_devices = !descriptions->empty();
++  // enumerates nothing at all. The virtual entries come in the claimed
++  // platform's shape, whatever the host's platform adds.
+   const base::apostate::Profile* profile = base::apostate::Profile::Get();
+   const bool claims_windows = profile && profile->ua_platform() == "Windows";
+-  if (!host_had_devices) {
+-    descriptions->emplace_back(synthetic.front().label,
+-                               AudioDeviceDescription::kDefaultDeviceId,
+-                               synthetic.front().group_id,
+-                               /*is_system_default=*/true,
+-                               /*is_communications_device=*/false);
+-    if (claims_windows) {
+-      descriptions->emplace_back(
+-          synthetic.front().label,
+-          AudioDeviceDescription::kCommunicationsDeviceId,
+-          synthetic.front().group_id,
+-          /*is_system_default=*/false,
+-          /*is_communications_device=*/true);
+-    }
++  const base::apostate::PersonaMediaDevice& first = persona.front();
++  descriptions->emplace_back(
++      first.label, AudioDeviceDescription::kDefaultDeviceId, first.group_id,
++      /*is_system_default=*/true,
++      /*is_communications_device=*/false);
++  if (claims_windows) {
++    descriptions->emplace_back(first.label,
++                               AudioDeviceDescription::kCommunicationsDeviceId,
++                               first.group_id,
++                               /*is_system_default=*/false,
++                               /*is_communications_device=*/true);
+   }
+-  bool first = true;
+-  for (const auto& device : synthetic) {
++  bool mapped = true;
++  for (const auto& device : persona) {
+     // The first device is the one the virtual entries point at.
+-    const bool mapped = !host_had_devices && first;
+     descriptions->emplace_back(
+         device.label, device.id, device.group_id,
+         /*is_system_default=*/mapped,
+         /*is_communications_device=*/mapped && claims_windows);
+-    first = false;
++    mapped = false;
+   }
+ }
+ 
+@@ -386,8 +386,8 @@ void AudioManagerBase::GetAudioInputDeviceDescriptions(
+       &AudioManagerBase::GetDefaultInputDeviceID,
+       &AudioManagerBase::GetCommunicationsInputDeviceID,
+       &AudioManagerBase::GetGroupIDInput);
+-  AppendProfileDevices(device_descriptions,
+-                       &base::apostate::SyntheticAudioInputDevices);
++  ReplaceWithPersonaDevices(device_descriptions,
++                            base::apostate::MediaDeviceKind::kAudioInput);
+   base::UmaHistogramEnumeration(
+       "Media.Audio.InputDeviceEnumerationOutcome",
+       GetDeviceEnumerationOutcome(
+@@ -403,8 +403,8 @@ void AudioManagerBase::GetAudioOutputDeviceDescriptions(
+       &AudioManagerBase::GetDefaultOutputDeviceID,
+       &AudioManagerBase::GetCommunicationsOutputDeviceID,
+       &AudioManagerBase::GetGroupIDOutput);
+-  AppendProfileDevices(device_descriptions,
+-                       &base::apostate::SyntheticAudioOutputDevices);
++  ReplaceWithPersonaDevices(device_descriptions,
++                            base::apostate::MediaDeviceKind::kAudioOutput);
+   base::UmaHistogramEnumeration(
+       "Media.Audio.OutputDeviceEnumerationOutcome",
+       GetDeviceEnumerationOutcome(
+@@ -573,15 +573,45 @@ AudioInputStream* AudioManagerBase::MakeAudioInputStream(
+     params.set_format(AudioParameters::AUDIO_FAKE);
+   }
+ 
+-  // A microphone the profile claims has no hardware behind it, so no platform
+-  // backend can open it. FakeAudioInputStream is the browser's own
+-  // hardware-less input stream and is already wired into this switch below;
+-  // what it produces is decided in ChooseSource(), not here. Note this changes
+-  // the stream implementation, not the advertised parameters: the sample rate,
+-  // channel count and buffer length a page reads stay what
+-  // AudioSystemHelper::ComputeInputParameters reported for this device.
+-  if (base::apostate::IsSyntheticAudioInputId(device_id)) {
+-    params.set_format(AudioParameters::AUDIO_FAKE);
++  // A microphone of the persona opens the host microphone it is routed to,
++  // under the parameters AudioSystemHelper::ComputeInputParameters reported
++  // for the persona's device; the platform stream converts from the
++  // hardware's own format. With no host microphone it opens
++  // FakeAudioInputStream, the browser's own hardware-less input stream,
++  // already wired into this switch below; what that produces is decided in
++  // ChooseSource(), not here. The virtual default and communications entries
++  // point at the persona's first microphone and open the host's default one.
++  // The route is worked out from the host's devices now, not remembered from
++  // an enumeration, so a microphone plugged in or out since then is followed.
++  if (base::apostate::PersonaOwnsDevices(
++          base::apostate::MediaDeviceKind::kAudioInput) &&
++      (base::apostate::IsSyntheticAudioInputId(device_id) ||
++       AudioDeviceDescription::IsDefaultDevice(device_id) ||
++       AudioDeviceDescription::IsCommunicationsDevice(device_id))) {
++    AudioDeviceNames names;
++    GetAudioInputDeviceNames(&names);
++    std::vector<std::string> host_ids;
++    for (const auto& name : names) {
++      if (!AudioDeviceDescription::IsDefaultDevice(name.unique_id) &&
++          !AudioDeviceDescription::IsCommunicationsDevice(name.unique_id)) {
++        host_ids.push_back(name.unique_id);
++      }
++    }
++    const std::optional<base::apostate::PersonaMediaDevice> persona =
++        base::apostate::ResolveRoute(device_id, host_ids.size());
++    const bool unknown_persona_id =
++        base::apostate::IsSyntheticAudioInputId(device_id) && !persona;
++    if (host_ids.empty() || unknown_persona_id) {
++      params.set_format(AudioParameters::AUDIO_FAKE);
++    } else if (persona && persona->route ==
++                              base::apostate::MediaDeviceRoute::kHostDevice) {
++      return MakeAudioInputStream(params, host_ids[persona->host_index],
++                                  log_callback);
++    } else if (AudioDeviceDescription::IsCommunicationsDevice(device_id)) {
++      // Only a Windows host has a communications device of its own.
++      return MakeAudioInputStream(
++          params, AudioDeviceDescription::kDefaultDeviceId, log_callback);
++    }
+   }
+ 
+   SendLogMessage(
+@@ -698,11 +728,15 @@ AudioOutputStream* AudioManagerBase::MakeAudioOutputStreamProxy(
+     output_params.set_format(AudioParameters::AUDIO_FAKE);
+   }
+ 
+-  // A speaker the profile claims has no hardware behind it, so no platform
+-  // backend can open it. It plays into the browser's own hardware-less output
+-  // stream, the one --disable-audio-output selects above, instead of handing
+-  // a platform backend an identifier it has never seen.
++  // A speaker of the persona plays on the host's default output. With no host
++  // output it plays into the browser's own hardware-less output stream, the
++  // one --disable-audio-output selects above, instead of handing a platform
++  // backend an identifier it has never seen.
+   if (base::apostate::IsSyntheticAudioOutputId(device_id)) {
++    if (HasAudioOutputDevices()) {
++      return MakeAudioOutputStreamProxy(
++          params, AudioDeviceDescription::kDefaultDeviceId);
++    }
+     output_params.set_format(AudioParameters::AUDIO_FAKE);
+   }
+ 
+diff --git a/media/audio/audio_system_helper.cc b/media/audio/audio_system_helper.cc
+index e6769b6..932b562 100644
+--- a/media/audio/audio_system_helper.cc
++++ b/media/audio/audio_system_helper.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "base/apostate/media_devices.h"
+ #include "base/task/single_thread_task_runner.h"
++#include "media/audio/audio_device_description.h"
+ #include "media/audio/audio_manager.h"
+ #include "media/base/limits.h"
+ 
+@@ -29,6 +30,34 @@ std::optional<AudioParameters> TryToFixChannels(const AudioParameters& params) {
+   return params_copy.IsValid() ? params_copy : std::optional<AudioParameters>();
+ }
+ 
++// The persona's microphone a capture of `device_id` opens: the device itself,
++// or, for the virtual default and communications entries, the first one,
++// which is what they point at. nullopt when the profile does not decide the
++// microphones or the id names none of them.
++std::optional<base::apostate::PersonaMediaDevice> PersonaInput(
++    const std::string& device_id,
++    bool host_has_input) {
++  if (!base::apostate::PersonaOwnsDevices(
++          base::apostate::MediaDeviceKind::kAudioInput)) {
++    return std::nullopt;
++  }
++  // Routing needs the host's own list, which AudioManagerBase works out when
++  // the stream opens. Everything read here is the same for any host with at
++  // least one microphone, so a count of one stands in for it.
++  const size_t host_count = host_has_input ? 1 : 0;
++  if (AudioDeviceDescription::IsDefaultDevice(device_id) ||
++      AudioDeviceDescription::IsCommunicationsDevice(device_id)) {
++    std::vector<base::apostate::PersonaMediaDevice> devices =
++        base::apostate::PersonaDevices(
++            base::apostate::MediaDeviceKind::kAudioInput, host_count);
++    if (devices.empty()) {
++      return std::nullopt;
++    }
++    return std::move(devices.front());
++  }
++  return base::apostate::ResolveRoute(device_id, host_count);
++}
++
+ }  // namespace
+ 
+ AudioSystemHelper::AudioSystemHelper(AudioManager* audio_manager)
+@@ -81,7 +110,7 @@ void AudioSystemHelper::GetAssociatedOutputDeviceID(
+     AudioSystem::OnDeviceIdCallback on_device_id_cb) {
+   DCHECK(audio_manager_->GetTaskRunner()->BelongsToCurrentThread());
+   const std::string associated_output_device_id =
+-      audio_manager_->GetAssociatedOutputDeviceID(input_device_id);
++      ComputeAssociatedOutputDeviceID(input_device_id);
+   std::move(on_device_id_cb)
+       .Run(associated_output_device_id.empty() ? std::optional<std::string>()
+                                                : associated_output_device_id);
+@@ -92,7 +121,7 @@ void AudioSystemHelper::GetInputDeviceInfo(
+     AudioSystem::OnInputDeviceInfoCallback on_input_device_info_cb) {
+   DCHECK(audio_manager_->GetTaskRunner()->BelongsToCurrentThread());
+   const std::string associated_output_device_id =
+-      audio_manager_->GetAssociatedOutputDeviceID(input_device_id);
++      ComputeAssociatedOutputDeviceID(input_device_id);
+   std::move(on_input_device_info_cb)
+       .Run(ComputeInputParameters(input_device_id),
+            associated_output_device_id.empty() ? std::optional<std::string>()
+@@ -103,17 +132,19 @@ std::optional<AudioParameters> AudioSystemHelper::ComputeInputParameters(
+     const std::string& device_id) {
+   DCHECK(audio_manager_->GetTaskRunner()->BelongsToCurrentThread());
+ 
+-  // A microphone the profile claims. The platform manager has never heard of
+-  // it and would answer with whatever it answers for an unknown device, and
+-  // on a host with no microphone at all the HasAudioInputDevices() check below
+-  // refuses before that even happens — which is how a device that enumerates
+-  // ends up failing to open. The format is fixed rather than derived from the
+-  // host, because the device is not the host's.
+-  if (base::apostate::IsSyntheticAudioInputId(device_id)) {
++  // A microphone of the persona, or the virtual entries that point at its
++  // first one. The platform manager has never heard of a persona id and would
++  // answer with whatever it answers for an unknown device, and on a host with
++  // no microphone at all the HasAudioInputDevices() check below refuses
++  // before that even happens — which is how a device that enumerates ends up
++  // failing to open. The format is the persona device's rather than the
++  // host's, because the device a page sees is not the host's; the stream
++  // AudioManagerBase opens is asked for this format and converts to it.
++  if (const std::optional<base::apostate::PersonaMediaDevice> persona =
++          PersonaInput(device_id, audio_manager_->HasAudioInputDevices())) {
+     return AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+-                           ChannelLayoutConfig::Mono(),
+-                           base::apostate::kSyntheticAudioInputSampleRate,
+-                           base::apostate::kSyntheticAudioInputBufferFrames);
++                           ChannelLayoutConfig::Guess(persona->channels),
++                           persona->sample_rate, persona->buffer_frames);
+   }
+ 
+   // TODO(olka): remove this when AudioManager::GetInputStreamParameters()
+@@ -144,8 +175,11 @@ std::optional<AudioParameters> AudioSystemHelper::ComputeOutputParameters(
+   if (!audio_manager_->HasAudioOutputDevices())
+     return std::optional<AudioParameters>();
+ 
++  // A speaker of the persona plays on the host's default output, so that is
++  // the device whose parameters it has.
+   std::string effective_device_id =
+-      AudioDeviceDescription::IsDefaultDevice(device_id)
++      AudioDeviceDescription::IsDefaultDevice(device_id) ||
++              base::apostate::IsSyntheticAudioOutputId(device_id)
+           ? audio_manager_->GetDefaultOutputDeviceID()
+           : device_id;
+ 
+@@ -158,4 +192,30 @@ std::optional<AudioParameters> AudioSystemHelper::ComputeOutputParameters(
+   return TryToFixChannels(params);
+ }
+ 
++std::string AudioSystemHelper::ComputeAssociatedOutputDeviceID(
++    const std::string& input_device_id) {
++  DCHECK(audio_manager_->GetTaskRunner()->BelongsToCurrentThread());
++
++  // The speaker of the persona that shares the microphone's group, as the
++  // platform managers pair a headset's microphone with its earphones. Asking
++  // the platform about a persona id would get the host's pairing, or nothing.
++  if (const std::optional<base::apostate::PersonaMediaDevice> input =
++          PersonaInput(input_device_id,
++                       audio_manager_->HasAudioInputDevices())) {
++    if (!base::apostate::PersonaOwnsDevices(
++            base::apostate::MediaDeviceKind::kAudioOutput)) {
++      return std::string();
++    }
++    for (const auto& output : base::apostate::PersonaDevices(
++             base::apostate::MediaDeviceKind::kAudioOutput,
++             audio_manager_->HasAudioOutputDevices() ? 1 : 0)) {
++      if (output.group_id == input->group_id) {
++        return output.id;
++      }
++    }
++    return std::string();
++  }
++  return audio_manager_->GetAssociatedOutputDeviceID(input_device_id);
++}
++
+ }  // namespace media
+diff --git a/media/audio/audio_system_helper.h b/media/audio/audio_system_helper.h
+index a2b257b..96b14eb 100644
+--- a/media/audio/audio_system_helper.h
++++ b/media/audio/audio_system_helper.h
+@@ -55,6 +55,8 @@ class MEDIA_EXPORT AudioSystemHelper {
+       const std::string& device_id);
+   std::optional<AudioParameters> ComputeOutputParameters(
+       const std::string& device_id);
++  std::string ComputeAssociatedOutputDeviceID(
++      const std::string& input_device_id);
+ 
+   // Pointed-to AudioManager is guaranteed to outlive AudioSystemHelper.
+   const raw_ptr<AudioManager> audio_manager_;
+diff --git a/media/capture/video/apostate_video_capture_device.cc b/media/capture/video/apostate_video_capture_device.cc
+index 98a041f..a8e321e 100644
+--- a/media/capture/video/apostate_video_capture_device.cc
++++ b/media/capture/video/apostate_video_capture_device.cc
+@@ -27,10 +27,12 @@ namespace media {
+ 
+ namespace {
+ 
+-// What a built-in laptop camera offers. A page reads the maxima of this list
+-// as MediaStreamTrack.getCapabilities() and the negotiated entry as
+-// getSettings(), so a claim of 1920x1080 here is a claim the device then has
+-// to honour. It does: AllocateAndStart() paints at the negotiated size.
++// What a camera of the persona offers, up to the largest size of its class. A
++// page reads the maxima of this list as MediaStreamTrack.getCapabilities() and
++// the negotiated entry as getSettings(), so a claim of 1920x1080 here is a
++// claim the device then has to honour. It does: AllocateAndStart() paints at
++// the negotiated size, and a routed camera only offers sizes its host camera
++// has.
+ //
+ // 30 fps throughout. A built-in camera that claims 60 at 1080p is a webcam
+ // almost nobody has, and the claim is checkable by counting delivered frames.
+@@ -38,10 +40,44 @@ constexpr struct {
+   int width;
+   int height;
+ } kSupportedSizes[] = {
+-    {320, 240}, {640, 360}, {640, 480}, {1280, 720}, {1920, 1080},
++    {320, 240}, {640, 360}, {640, 480}, {1280, 720}, {1920, 1080}, {3840, 2160},
+ };
+ constexpr float kFrameRate = 30.0f;
+ 
++bool Fits(const gfx::Size& size, const gfx::Size& max_size) {
++  return size.width() <= max_size.width() && size.height() <= max_size.height();
++}
++
++// The photo state of a camera of the persona: its frame-size range, and no
++// controls. The base class drops this callback, which leaves ImageCapture's
++// promise pending forever; a real camera resolves it, and a promise that never
++// settles is a clearer signal than any value could be. A routed camera answers
++// the same way rather than with the host camera's own controls, which would
++// name the host's hardware.
++mojom::PhotoStatePtr PersonaPhotoState(const VideoCaptureFormats& formats,
++                                       const VideoCaptureFormat& current) {
++  mojom::PhotoStatePtr state = mojo::CreateEmptyPhotoState();
++  state->width = mojom::Range::New();
++  state->height = mojom::Range::New();
++  state->width->current = current.frame_size.width();
++  state->height->current = current.frame_size.height();
++  state->width->min = state->height->min = std::numeric_limits<int>::max();
++  state->width->max = state->height->max = 0;
++  for (const auto& format : formats) {
++    state->width->min =
++        std::min<double>(state->width->min, format.frame_size.width());
++    state->width->max =
++        std::max<double>(state->width->max, format.frame_size.width());
++    state->height->min =
++        std::min<double>(state->height->min, format.frame_size.height());
++    state->height->max =
++        std::max<double>(state->height->max, format.frame_size.height());
++  }
++  state->width->step = 1.0;
++  state->height->step = 1.0;
++  return state;
++}
++
+ uint64_t NextRandom(uint64_t state) {
+   // xorshift64. Cheap, deterministic, and only ever used to pick grain.
+   state ^= state << 13;
+@@ -79,11 +115,58 @@ const VideoCaptureFormat& ClosestFormat(const VideoCaptureFormats& formats,
+ }  // namespace
+ 
+ // static
+-VideoCaptureFormats ApostateVideoCaptureDevice::SupportedFormats() {
++VideoCaptureFormats ApostateVideoCaptureDevice::SupportedFormats(
++    const gfx::Size& max_size) {
+   VideoCaptureFormats formats;
+   for (const auto& size : kSupportedSizes) {
+-    formats.emplace_back(gfx::Size(size.width, size.height), kFrameRate,
+-                         PIXEL_FORMAT_I420);
++    const gfx::Size frame_size(size.width, size.height);
++    if (Fits(frame_size, max_size)) {
++      formats.emplace_back(frame_size, kFrameRate, PIXEL_FORMAT_I420);
++    }
++  }
++  return formats;
++}
++
++// static
++VideoCaptureFormats ApostateVideoCaptureDevice::RoutedFormats(
++    const VideoCaptureFormats& host_formats,
++    const gfx::Size& max_size) {
++  // One entry per size, at the host's best rate for it up to 30 fps, so the
++  // list reads like a camera's rather than like a list of pixel formats.
++  const auto collect = [&host_formats](auto&& wanted) {
++    VideoCaptureFormats result;
++    for (const auto& host : host_formats) {
++      if (!wanted(host.frame_size)) {
++        continue;
++      }
++      const float rate = std::min(host.frame_rate, kFrameRate);
++      auto it = std::ranges::find(result, host.frame_size,
++                                  &VideoCaptureFormat::frame_size);
++      if (it == result.end()) {
++        result.emplace_back(host.frame_size, rate, host.pixel_format);
++      } else if (rate > it->frame_rate) {
++        *it = VideoCaptureFormat(host.frame_size, rate, host.pixel_format);
++      }
++    }
++    return result;
++  };
++
++  VideoCaptureFormats formats = collect([&max_size](const gfx::Size& size) {
++    return Fits(size, max_size) &&
++           std::ranges::any_of(kSupportedSizes, [&size](const auto& entry) {
++             return entry.width == size.width() &&
++                    entry.height == size.height();
++           });
++  });
++  if (formats.empty()) {
++    formats = collect(
++        [&max_size](const gfx::Size& size) { return Fits(size, max_size); });
++  }
++  if (formats.empty()) {
++    // A host camera whose every size is larger than the persona's class, or
++    // one that reported no formats. The persona's own sizes: the host camera
++    // delivers its nearest, and the page still sees the persona's list.
++    formats = SupportedFormats(max_size);
+   }
+   return formats;
+ }
+@@ -242,21 +325,7 @@ void ApostateVideoCaptureDevice::CaptureFrame() {
+ 
+ void ApostateVideoCaptureDevice::GetPhotoState(GetPhotoStateCallback callback) {
+   DCHECK(thread_checker_.CalledOnValidThread());
+-  // The base class drops this callback, which leaves ImageCapture's promise
+-  // pending forever. A real camera resolves it, and a promise that never
+-  // settles is a clearer signal than any value could be.
+-  mojom::PhotoStatePtr state = mojo::CreateEmptyPhotoState();
+-  state->width = mojom::Range::New();
+-  state->width->current = format_.frame_size.width();
+-  state->width->min = kSupportedSizes[0].width;
+-  state->width->max = kSupportedSizes[std::size(kSupportedSizes) - 1].width;
+-  state->width->step = 1.0;
+-  state->height = mojom::Range::New();
+-  state->height->current = format_.frame_size.height();
+-  state->height->min = kSupportedSizes[0].height;
+-  state->height->max = kSupportedSizes[std::size(kSupportedSizes) - 1].height;
+-  state->height->step = 1.0;
+-  std::move(callback).Run(std::move(state));
++  std::move(callback).Run(PersonaPhotoState(supported_formats_, format_));
+ }
+ 
+ void ApostateVideoCaptureDevice::SetPhotoOptions(
+@@ -276,6 +345,71 @@ void ApostateVideoCaptureDevice::TakePhoto(TakePhotoCallback callback) {
+       RotateAndBlobify(frame_.as_span(), format_, /*rotation=*/0));
+ }
+ 
++ApostateRoutedVideoCaptureDevice::ApostateRoutedVideoCaptureDevice(
++    std::unique_ptr<VideoCaptureDevice> host,
++    VideoCaptureFormats supported_formats)
++    : host_(std::move(host)),
++      supported_formats_(std::move(supported_formats)) {}
++
++ApostateRoutedVideoCaptureDevice::~ApostateRoutedVideoCaptureDevice() = default;
++
++void ApostateRoutedVideoCaptureDevice::AllocateAndStart(
++    const VideoCaptureParams& params,
++    std::unique_ptr<Client> client) {
++  // The request was resolved against the persona's formats, each of which the
++  // host camera has, so it goes to the host camera unchanged.
++  format_ = ClosestFormat(supported_formats_, params.requested_format);
++  host_->AllocateAndStart(params, std::move(client));
++}
++
++void ApostateRoutedVideoCaptureDevice::RequestRefreshFrame() {
++  host_->RequestRefreshFrame();
++}
++
++void ApostateRoutedVideoCaptureDevice::MaybeSuspend() {
++  host_->MaybeSuspend();
++}
++
++void ApostateRoutedVideoCaptureDevice::Resume() {
++  host_->Resume();
++}
++
++void ApostateRoutedVideoCaptureDevice::StopAndDeAllocate() {
++  host_->StopAndDeAllocate();
++}
++
++void ApostateRoutedVideoCaptureDevice::GetPhotoState(
++    GetPhotoStateCallback callback) {
++  std::move(callback).Run(PersonaPhotoState(supported_formats_, format_));
++}
++
++void ApostateRoutedVideoCaptureDevice::SetPhotoOptions(
++    mojom::PhotoSettingsPtr settings,
++    SetPhotoOptionsCallback callback) {
++  std::move(callback).Run(true);
++}
++
++void ApostateRoutedVideoCaptureDevice::TakePhoto(TakePhotoCallback callback) {
++  host_->TakePhoto(std::move(callback));
++}
++
++void ApostateRoutedVideoCaptureDevice::InvalidateBuffers() {
++  host_->InvalidateBuffers();
++}
++
++void ApostateRoutedVideoCaptureDevice::OnUtilizationReport(
++    media::VideoCaptureFeedback feedback) {
++  host_->OnUtilizationReport(feedback);
++}
++
++ApostateVideoCaptureDeviceFactory::PersonaCamera::PersonaCamera() = default;
++ApostateVideoCaptureDeviceFactory::PersonaCamera::PersonaCamera(
++    const PersonaCamera&) = default;
++ApostateVideoCaptureDeviceFactory::PersonaCamera&
++ApostateVideoCaptureDeviceFactory::PersonaCamera::operator=(
++    const PersonaCamera&) = default;
++ApostateVideoCaptureDeviceFactory::PersonaCamera::~PersonaCamera() = default;
++
+ ApostateVideoCaptureDeviceFactory::ApostateVideoCaptureDeviceFactory(
+     std::unique_ptr<VideoCaptureDeviceFactory> platform_factory)
+     : platform_factory_(std::move(platform_factory)) {}
+@@ -286,9 +420,23 @@ ApostateVideoCaptureDeviceFactory::~ApostateVideoCaptureDeviceFactory() =
+ VideoCaptureErrorOrDevice ApostateVideoCaptureDeviceFactory::CreateDevice(
+     const VideoCaptureDeviceDescriptor& device_descriptor) {
+   if (base::apostate::IsSyntheticVideoInputId(device_descriptor.device_id)) {
++    const auto it = persona_cameras_.find(device_descriptor.device_id);
++    if (it != persona_cameras_.end() && it->second.host) {
++      VideoCaptureErrorOrDevice host =
++          platform_factory_->CreateDevice(*it->second.host);
++      if (!host.ok()) {
++        return host;
++      }
++      return VideoCaptureErrorOrDevice(
++          std::make_unique<ApostateRoutedVideoCaptureDevice>(
++              host.ReleaseDevice(), it->second.formats));
++    }
+     return VideoCaptureErrorOrDevice(
+         std::make_unique<ApostateVideoCaptureDevice>(
+-            ApostateVideoCaptureDevice::SupportedFormats(),
++            it != persona_cameras_.end()
++                ? it->second.formats
++                : ApostateVideoCaptureDevice::SupportedFormats(
++                      gfx::Size(1920, 1080)),
+             base::apostate::SyntheticDeviceSeed(device_descriptor.device_id)));
+   }
+   return platform_factory_->CreateDevice(device_descriptor);
+@@ -304,10 +452,47 @@ void ApostateVideoCaptureDeviceFactory::GetDevicesInfo(
+ void ApostateVideoCaptureDeviceFactory::OnPlatformDevicesInfo(
+     GetDevicesInfoCallback callback,
+     std::vector<VideoCaptureDeviceInfo> devices_info) {
+-  for (const auto& synthetic :
+-       base::apostate::SyntheticVideoInputDevices(devices_info.size())) {
++  if (!base::apostate::PersonaOwnsDevices(
++          base::apostate::MediaDeviceKind::kVideoInput)) {
++    std::move(callback).Run(std::move(devices_info));
++    return;
++  }
++
++  // Worked out again on every enumeration, so a camera plugged in or out is
++  // followed without the list a page sees changing.
++  persona_cameras_.clear();
++  std::vector<VideoCaptureDeviceInfo> persona_info;
++  for (const auto& device : base::apostate::PersonaDevices(
++           base::apostate::MediaDeviceKind::kVideoInput, devices_info.size())) {
++    const gfx::Size max_size(device.max_width, device.max_height);
++    PersonaCamera camera;
++    std::optional<CameraAvailability> availability;
++    if (device.route == base::apostate::MediaDeviceRoute::kHostDevice &&
++        device.host_index < devices_info.size()) {
++      const VideoCaptureDeviceInfo& host = devices_info[device.host_index];
++      camera.host = host.descriptor;
++      camera.formats = ApostateVideoCaptureDevice::RoutedFormats(
++          host.supported_formats, max_size);
++      // Whether another application holds the camera is a fact about the
++      // hardware the page is about to open, and getUserMedia() fails the
++      // same way whatever the camera is called.
++      availability = host.descriptor.availability;
++    } else {
++      camera.formats = ApostateVideoCaptureDevice::SupportedFormats(max_size);
++    }
++
++    VideoFacingMode facing = VideoFacingMode::MEDIA_VIDEO_FACING_NONE;
++    if (device.facing == "user") {
++      facing = VideoFacingMode::MEDIA_VIDEO_FACING_USER;
++    } else if (device.facing == "environment") {
++      facing = VideoFacingMode::MEDIA_VIDEO_FACING_ENVIRONMENT;
++    }
++
++    // The catalogue label already carries the " (vid:pid)" a USB camera's
++    // label ends with, so the model id stays empty and the label a page
++    // reads is the catalogue's, character for character.
+     VideoCaptureDeviceDescriptor descriptor(
+-        synthetic.label, synthetic.id, /*model_id=*/std::string(),
++        device.label, device.id, /*model_id=*/std::string(),
+ #if BUILDFLAG(IS_MAC)
+         VideoCaptureApi::MACOSX_AVFOUNDATION,
+ #elif BUILDFLAG(IS_WIN)
+@@ -318,19 +503,16 @@ void ApostateVideoCaptureDeviceFactory::OnPlatformDevicesInfo(
+         VideoCaptureApi::UNKNOWN,
+ #endif
+         // No pan, tilt or zoom: a built-in camera has none, and the reference
+-        // macOS capture reports none.
++        // macOS capture reports none. A routed camera hides the host
++        // camera's, which would name its hardware.
+         VideoCaptureControlSupport(),
+-        VideoCaptureTransportType::APPLE_USB_OR_BUILT_IN,
+-        // Not front or back. facingMode is populated on Android and ChromeOS;
+-        // the reference macOS camera reports an empty facingMode list, and a
+-        // desktop camera that claims "user" contradicts every desktop camera a
+-        // detector has seen.
+-        VideoFacingMode::MEDIA_VIDEO_FACING_NONE);
++        VideoCaptureTransportType::APPLE_USB_OR_BUILT_IN, facing, availability);
+     VideoCaptureDeviceInfo info(descriptor);
+-    info.supported_formats = ApostateVideoCaptureDevice::SupportedFormats();
+-    devices_info.push_back(std::move(info));
++    info.supported_formats = camera.formats;
++    persona_info.push_back(std::move(info));
++    persona_cameras_[device.id] = std::move(camera);
+   }
+-  std::move(callback).Run(std::move(devices_info));
++  std::move(callback).Run(std::move(persona_info));
+ }
+ 
+ #if BUILDFLAG(IS_WIN)
+diff --git a/media/capture/video/apostate_video_capture_device.h b/media/capture/video/apostate_video_capture_device.h
+index ddb5eca..4368ffa 100644
+--- a/media/capture/video/apostate_video_capture_device.h
++++ b/media/capture/video/apostate_video_capture_device.h
+@@ -7,7 +7,10 @@
+ 
+ #include <stdint.h>
+ 
++#include <map>
+ #include <memory>
++#include <optional>
++#include <string>
+ #include <vector>
+ 
+ #include "base/containers/heap_array.h"
+@@ -17,10 +20,11 @@
+ #include "media/capture/capture_export.h"
+ #include "media/capture/video/video_capture_device.h"
+ #include "media/capture/video/video_capture_device_factory.h"
++#include "ui/gfx/geometry/size.h"
+ 
+ namespace media {
+ 
+-// A camera the profile claims and the host does not have.
++// A camera of the persona with no host camera to open.
+ //
+ // Delivers I420 frames at the negotiated format. The frames are a dim,
+ // low-contrast scene: a smooth luma gradient with a vignette, a slow exposure
+@@ -39,10 +43,22 @@ class CAPTURE_EXPORT ApostateVideoCaptureDevice : public VideoCaptureDevice {
+ 
+   ~ApostateVideoCaptureDevice() override;
+ 
+-  // The formats every synthetic camera offers. A page reads the maxima of this
+-  // list through MediaStreamTrack.getCapabilities(), and the negotiated entry
+-  // through getSettings(), so the list is what makes the two agree.
+-  static VideoCaptureFormats SupportedFormats();
++  // The formats a synthetic camera whose largest frame is `max_size` offers.
++  // A page reads the maxima of this list through
++  // MediaStreamTrack.getCapabilities(), and the negotiated entry through
++  // getSettings(), so the list is what makes the two agree.
++  static VideoCaptureFormats SupportedFormats(const gfx::Size& max_size);
++
++  // The formats a camera of the persona offers when it opens `host_formats`,
++  // the formats of the host camera it is routed to: the sizes of the
++  // persona's size class that the host camera has, at no more than 30 fps.
++  // When the two share no size, the host's sizes up to the persona's largest.
++  // Every entry is one the host camera can deliver, so what getSettings()
++  // reports after a getUserMedia() is in what getCapabilities() reported
++  // before it.
++  static VideoCaptureFormats RoutedFormats(
++      const VideoCaptureFormats& host_formats,
++      const gfx::Size& max_size);
+ 
+   // VideoCaptureDevice:
+   void AllocateAndStart(const VideoCaptureParams& params,
+@@ -74,13 +90,56 @@ class CAPTURE_EXPORT ApostateVideoCaptureDevice : public VideoCaptureDevice {
+   base::WeakPtrFactory<ApostateVideoCaptureDevice> weak_factory_{this};
+ };
+ 
+-// Wraps the platform factory and adds the cameras the profile claims.
++// A camera of the persona that opens a camera of the host.
++//
++// Frames, buffers and photos are the host camera's. What the device says about
++// itself is the persona's: the formats it offers and the photo state, which a
++// page reads through getCapabilities() and ImageCapture. Photo options are
++// accepted and not applied, because the persona's camera has no controls.
++class CAPTURE_EXPORT ApostateRoutedVideoCaptureDevice
++    : public VideoCaptureDevice {
++ public:
++  ApostateRoutedVideoCaptureDevice(std::unique_ptr<VideoCaptureDevice> host,
++                                   VideoCaptureFormats supported_formats);
++
++  ApostateRoutedVideoCaptureDevice(const ApostateRoutedVideoCaptureDevice&) =
++      delete;
++  ApostateRoutedVideoCaptureDevice& operator=(
++      const ApostateRoutedVideoCaptureDevice&) = delete;
++
++  ~ApostateRoutedVideoCaptureDevice() override;
++
++  // VideoCaptureDevice:
++  void AllocateAndStart(const VideoCaptureParams& params,
++                        std::unique_ptr<Client> client) override;
++  void RequestRefreshFrame() override;
++  void MaybeSuspend() override;
++  void Resume() override;
++  void StopAndDeAllocate() override;
++  void GetPhotoState(GetPhotoStateCallback callback) override;
++  void SetPhotoOptions(mojom::PhotoSettingsPtr settings,
++                       SetPhotoOptionsCallback callback) override;
++  void TakePhoto(TakePhotoCallback callback) override;
++  void InvalidateBuffers() override;
++
++  // VideoFrameConsumerFeedbackObserver:
++  void OnUtilizationReport(media::VideoCaptureFeedback feedback) override;
++
++ private:
++  const std::unique_ptr<VideoCaptureDevice> host_;
++  const VideoCaptureFormats supported_formats_;
++  VideoCaptureFormat format_;
++};
++
++// Wraps the platform factory and answers with the persona's cameras.
+ //
+ // This is the layer the whole browser agrees on: the same GetDevicesInfo()
+ // result feeds enumerateDevices(), device-change events and getUserMedia's
+ // device selection, and CreateDevice() is reached with a descriptor from that
+ // same list. A camera added anywhere above this is one that enumerates and
+-// then fails to open, which is what this patch exists to fix.
++// then fails to open. When the profile names the cameras, the host's cameras
++// are not listed at all: each camera of the persona opens a host camera, or
++// the synthetic camera when there is none left to open.
+ class CAPTURE_EXPORT ApostateVideoCaptureDeviceFactory
+     : public VideoCaptureDeviceFactory {
+  public:
+@@ -108,7 +167,22 @@ class CAPTURE_EXPORT ApostateVideoCaptureDeviceFactory
+   void OnPlatformDevicesInfo(GetDevicesInfoCallback callback,
+                              std::vector<VideoCaptureDeviceInfo> devices_info);
+ 
++  // What CreateDevice() opens for a camera of the persona, from the last
++  // enumeration. VideoCaptureSystemImpl only creates devices it has just
++  // enumerated, on this same thread.
++  struct PersonaCamera {
++    PersonaCamera();
++    PersonaCamera(const PersonaCamera&);
++    PersonaCamera& operator=(const PersonaCamera&);
++    ~PersonaCamera();
++
++    // The host camera it opens, or nullopt for the synthetic camera.
++    std::optional<VideoCaptureDeviceDescriptor> host;
++    VideoCaptureFormats formats;
++  };
++
+   const std::unique_ptr<VideoCaptureDeviceFactory> platform_factory_;
++  std::map<std::string, PersonaCamera> persona_cameras_;
+   base::WeakPtrFactory<ApostateVideoCaptureDeviceFactory> weak_factory_{this};
+ };
+ 

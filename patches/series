@@ -168,3 +168,4 @@
 0174-compose-the-host-gpu-where-its-family-has-no-anchor.patch
 0175-geolocation-a-switch-serves-the-profile-location.patch
 0176-network-listed-loopback-ports-answer-as-closed.patch
+0177-media-the-persona-device-list-replaces-the-host-list.patch
